@@ -4,3 +4,5 @@ uploads/
 *.log
 .DS_Store
 database/mongo_data/
+
+database/*.json
