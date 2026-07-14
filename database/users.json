@@ -1,0 +1,14 @@
+[
+  {
+    "username": "admin",
+    "password": "password",
+    "money": 950000,
+    "discordId": null
+  },
+  {
+    "username": "kien123",
+    "password": "password123",
+    "money": 50000,
+    "discordId": null
+  }
+]
