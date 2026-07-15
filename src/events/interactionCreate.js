@@ -11,6 +11,7 @@ const devCmd = require('../commands/dev');
 const buttonHandler = require('../handlers/buttonHandler');
 const selectMenuHandler = require('../handlers/selectMenuHandler');
 const modalHandler = require('../handlers/modalHandler');
+const shopFlowHandler = require('../handlers/shopFlowHandler');
 const logService = require('../services/logService');
 
 // Map tên lệnh -> handler
@@ -40,6 +41,8 @@ async function handle(interaction) {
         // BUTTONS
         // ═══════════════════════════════════════
         if (interaction.isButton()) {
+            // Ưu tiên luồng shop mới (MariaDB); nếu không khớp thì rơi xuống handler cũ
+            if (await shopFlowHandler.route(interaction)) return;
             return await buttonHandler.handle(interaction);
         }
 
@@ -47,6 +50,7 @@ async function handle(interaction) {
         // SELECT MENUS
         // ═══════════════════════════════════════
         if (interaction.isStringSelectMenu()) {
+            if (await shopFlowHandler.route(interaction)) return;
             return await selectMenuHandler.handle(interaction);
         }
 

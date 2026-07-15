@@ -30,6 +30,10 @@ async function handle(message) {
         return message.delete().catch(() => null); // Xóa lệnh !setup_shop đi cho gọn
     }
 
+    // Tính năng auto-post (dựa trên MongoDB) đã ngừng sau khi chuyển sang MariaDB.
+    return;
+
+    // eslint-disable-next-line no-unreachable
     // Lấy ID kênh auto-post từ db
     const autoPostChannelId = await settings.get('ch_auto_post');
     if (!autoPostChannelId || message.channel.id !== autoPostChannelId) return;

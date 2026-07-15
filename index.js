@@ -1,32 +1,31 @@
 /**
  * index.js - Entry point cho Kaiz Store Bot
- * 
- * Kiến trúc: Module-based, MongoDB, Discord.js v14
- * Chống bán trùng: Atomic MongoDB operations
- * Thanh toán: Web2M API Polling
+ *
+ * Kiến trúc: Discord.js v14 + MariaDB (đọc sản phẩm trực tiếp từ web shop).
+ * Chống bán trùng: khóa list_items atomic (status 2).
+ * Thanh toán: Vietcombank QR + Web2M Poller (khớp số tiền lẻ độc nhất).
  */
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const config = require('./config');
-const db = require('./src/utils/database');
+const db = require('./src/utils/mariadb');
 const logService = require('./src/services/logService');
-const paymentService = require('./src/services/paymentService');
+const paymentService = require('./src/services/mariaPaymentService');
+const vcbPoller = require('./src/utils/vcbPoller');
 const interactionHandler = require('./src/events/interactionCreate');
 const readyHandler = require('./src/events/ready');
 const messageHandler = require('./src/events/messageCreate');
-const autoImporter = require('./src/utils/autoImporter');
-const statsService = require('./src/services/statsService');
 const fs = require('fs');
 
-// Watch .env for changes to support hot-reloading banks
+// Hot-reload cấu hình ngân hàng khi .env đổi
 fs.watchFile('.env', (curr, prev) => {
     if (curr.mtime !== prev.mtime) {
-        console.log('[System] Đã tự động cập nhật cấu hình Ngân hàng mới từ .env!');
+        console.log('[System] Đã tự động cập nhật cấu hình từ .env!');
         config.reload();
     }
 });
 
 // ═══════════════════════════════════════════════════
-// 1. KHỞI TẠO DISCORD CLIENT
+// 1. DISCORD CLIENT
 // ═══════════════════════════════════════════════════
 const client = new Client({
     intents: [
@@ -40,26 +39,20 @@ const client = new Client({
 });
 
 // ═══════════════════════════════════════════════════
-// 2. KẾT NỐI MONGODB
+// 2. KHỞI ĐỘNG
 // ═══════════════════════════════════════════════════
 async function start() {
-    // Kết nối MongoDB trước
+    // Kết nối MariaDB
     await db.connect();
 
-    // Inject client vào các service cần dùng
+    // Inject client vào service cần gửi Discord
     logService.setClient(client);
     paymentService.setClient(client);
-    statsService.setClient(client);
 
-    // ═══════════════════════════════════════
-    // 3. SỰ KIỆN DISCORD & TÁC VỤ NGẦM
-    // ═══════════════════════════════════════
     client.once('ready', async () => {
         await readyHandler.handle(client);
-        // Bắt đầu quét thư mục auto-import
-        autoImporter.start();
-        // Bắt đầu cập nhật thống kê doanh thu
-        statsService.start();
+        // Poller VCB: dò thanh toán + tự hủy đơn hết hạn
+        vcbPoller.start();
     });
 
     client.on('interactionCreate', async (interaction) => {
@@ -70,9 +63,7 @@ async function start() {
         await messageHandler.handle(message);
     });
 
-    // ═══════════════════════════════════════
-    // 4. XỬ LÝ LỖI TOÀN CỤC
-    // ═══════════════════════════════════════
+    // ── Xử lý lỗi toàn cục ──
     client.on('error', (err) => {
         console.error('[Discord] Client error:', err);
         logService.error('discord_client', err.message);
@@ -80,17 +71,12 @@ async function start() {
 
     process.on('unhandledRejection', (err) => {
         console.error('[Process] Unhandled rejection:', err);
-        logService.error('unhandled_rejection', err.message || String(err));
     });
 
     process.on('uncaughtException', (err) => {
         console.error('[Process] Uncaught exception:', err);
-        logService.error('uncaught_exception', err.message);
     });
 
-    // ═══════════════════════════════════════
-    // 5. ĐĂNG NHẬP
-    // ═══════════════════════════════════════
     if (!config.DISCORD_TOKEN) {
         console.error('❌ Thiếu DISCORD_TOKEN trong .env');
         process.exit(1);

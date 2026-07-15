@@ -3,10 +3,7 @@
  */
 const { REST, Routes } = require('discord.js');
 const config = require('../../config');
-const { commandMap } = require('./interactionCreate');
 const logService = require('../services/logService');
-const web2mPoller = require('../utils/web2mPoller');
-const orderService = require('../services/orderService');
 
 async function handle(client) {
     console.log(`✅ Bot đã đăng nhập: ${client.user.tag}`);
@@ -51,28 +48,8 @@ async function handle(client) {
         console.error('❌ Lỗi đăng ký commands:', err);
     }
 
-    // ═══════════════════════════════════════
-    // 2. Khởi động Web2M Poller
-    // ═══════════════════════════════════════
-    web2mPoller.start();
+    // Poller VCB (dò thanh toán + hủy đơn hết hạn) được khởi động ở index.js.
 
-    // ═══════════════════════════════════════
-    // 3. Cron: Hủy đơn hết hạn (mỗi phút)
-    // ═══════════════════════════════════════
-    setInterval(async () => {
-        try {
-            const count = await orderService.expirePendingOrders();
-            if (count > 0) {
-                console.log(`[Cron] Đã hủy ${count} đơn hàng hết hạn.`);
-            }
-        } catch (err) {
-            console.error('[Cron] Lỗi hủy đơn hết hạn:', err.message);
-        }
-    }, 60 * 1000); // Mỗi phút
-
-    // ═══════════════════════════════════════
-    // 4. Log hệ thống
-    // ═══════════════════════════════════════
     await logService.system('start', `Bot ${client.user.tag} đã khởi động.`);
 }
 
