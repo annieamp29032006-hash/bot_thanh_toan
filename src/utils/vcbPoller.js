@@ -1,139 +1,114 @@
 /**
- * vcbPoller.js - Poll Web2M (gói Vietcombank) để tự động xác nhận chuyển khoản.
+ * vcbPoller.js - Poll Web2M để tự động xác nhận chuyển khoản (phương án DỰ PHÒNG).
+ *
+ * Ưu tiên dùng Webhook (Web2M tự đẩy sang, xem webhookServer.js). Poller này chạy
+ * song song như lưới an toàn: hỏi định kỳ + tự hủy đơn hết hạn nhả hàng về kho.
  *
  * Khớp giao dịch bằng SỐ TIỀN LẺ ĐỘC NHẤT (khách không cần ghi nội dung).
- * Mỗi vòng còn tự hủy các đơn quá hạn để nhả hàng về kho.
- *
- * Cấu hình .env cho VCB:
- *   WEB2M_API_NAME=historyapivcbv3   (tên API gói VCB của bạn trên web2m)
- *   WEB2M_API_KEY=...                (token/apikey)
- *   WEB2M_ACCOUNT_PASSWORD=...       (mật khẩu tài khoản web2m nếu gói yêu cầu)
- *   BANK_ACCOUNT=...                 (số tài khoản VCB nhận tiền)
  */
 const axios = require('axios');
 const config = require('../../config');
 const orderService = require('../services/mariaOrderService');
-const paymentService = require('../services/mariaPaymentService');
+const matcher = require('../services/paymentMatcher');
+const txParse = require('./txParse');
 
 let pollerInterval = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let _lastApiError = '';
+
+function ts() {
+    return new Date().toLocaleTimeString('vi-VN', { hour12: false });
+}
 
 function buildUrl() {
-    // Momo dùng cấu trúc khác; các bank (VCB/MB...) dùng chung dạng dưới
     if (config.WEB2M_API_NAME === 'historyapimomo') {
         return `https://api.web2m.com/${config.WEB2M_API_NAME}/${config.WEB2M_API_KEY}`;
     }
     return `https://api.web2m.com/${config.WEB2M_API_NAME}/${config.WEB2M_ACCOUNT_PASSWORD}/${config.BANK_ACCOUNT}/${config.WEB2M_API_KEY}`;
 }
 
-function extractTransactions(data) {
-    if (config.WEB2M_API_NAME === 'historyapimomo') {
-        return (data.momoMsg && data.momoMsg.tranList) ? data.momoMsg.tranList : [];
-    }
-    return data.transactions || data.data || [];
-}
-
-let _lastApiError = '';
 /**
- * Web2M trả { status: false, msg: "..." } khi token/tài khoản sai.
- * Trả về true nếu response hợp lệ (status !== false).
+ * Web2M hay lỗi vặt "Có lỗi xảy ra! Vui lòng thử lại" — gọi lại 2-3 lần thường là được.
+ * Thử tối đa `maxTries` lần TRONG CÙNG 1 chu kỳ. Trả về mảng giao dịch, hoặc null nếu thất bại.
  */
-function checkApiStatus(data) {
-    if (data && data.status === false) {
-        const msg = data.msg || data.message || 'Không rõ lý do';
-        // Chỉ log khi lỗi đổi (tránh spam mỗi 30s)
-        if (msg !== _lastApiError) {
-            console.error(`❌ [Web2M] API từ chối: "${msg}" — kiểm tra WEB2M_API_KEY / WEB2M_ACCOUNT_PASSWORD / BANK_ACCOUNT trong .env`);
-            _lastApiError = msg;
+async function fetchTransactions(maxTries = 4, delayMs = 1500) {
+    for (let attempt = 1; attempt <= maxTries; attempt++) {
+        try {
+            const res = await axios.get(buildUrl(), { timeout: 10000 });
+            if (res.data && res.data.status === false) {
+                const msg = res.data.msg || res.data.message || 'Không rõ lý do';
+                console.log(`   ⏳ [${ts()}] Lần ${attempt}/${maxTries}: Web2M lỗi "${msg}"${attempt < maxTries ? ' → thử lại...' : ''}`);
+                if (attempt < maxTries) { await sleep(delayMs); continue; }
+                console.error(`   ❌ [${ts()}] Web2M TỪ CHỐI sau ${maxTries} lần thử: "${msg}" (bỏ qua, chu kỳ sau thử tiếp)`);
+                _lastApiError = msg;
+                return null;
+            }
+            if (_lastApiError) { console.log(`   ✅ [${ts()}] Web2M đã hoạt động lại!`); _lastApiError = ''; }
+            if (attempt > 1) console.log(`   ✅ [${ts()}] Web2M OK sau ${attempt} lần thử.`);
+            return txParse.extractList(res.data);
+        } catch (err) {
+            if (['ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(err.code)) {
+                console.warn(`   ⏳ [${ts()}] Lần ${attempt}/${maxTries}: API không phản hồi (${err.code})${attempt < maxTries ? ' → thử lại...' : ''}`);
+                if (attempt < maxTries) { await sleep(delayMs); continue; }
+                return null;
+            }
+            throw err;
         }
-        return false;
     }
-    if (_lastApiError) {
-        console.log('✅ [Web2M] API đã hoạt động lại.');
-        _lastApiError = '';
-    }
-    return true;
-}
-
-function txAmountOf(tx) {
-    const raw = tx.amount ?? tx.value ?? tx.money ?? tx.creditAmount ?? tx.amountIn ??
-                tx.credit ?? tx.so_tien ?? tx.soTien ?? 0;
-    // amount có thể là chuỗi "50,000" hoặc "50000.00" -> chỉ giữ chữ số
-    return parseInt(String(raw).replace(/[^\d]/g, ''), 10) || 0;
-}
-function txIdOf(tx) {
-    return tx.id ?? tx.transactionID ?? tx.transactionId ?? tx.tid ?? tx.tranId ??
-           tx.refNo ?? tx.ma_gd ?? tx.traceId ?? tx.reference ?? '';
+    return null;
 }
 
 async function checkTransactions() {
     const pending = await orderService.getPendingOrders();
-    if (pending.length === 0) return;
+    if (pending.length === 0) {
+        console.log(`   [${ts()}] Không có đơn nào đang chờ thanh toán → bỏ qua gọi API.`);
+        return;
+    }
+    console.log(`   [${ts()}] Đơn đang chờ: ${pending.length} | số tiền chờ khớp: [${pending.map(o => Number(o.amount)).join(', ')}]`);
 
-    if (!config.WEB2M_API_KEY || !config.BANK_ACCOUNT) return; // chưa cấu hình VCB
-
-    let transactions = [];
-    try {
-        const res = await axios.get(buildUrl(), { timeout: 10000 });
-        if (!checkApiStatus(res.data)) return; // token/tài khoản sai -> đã log rõ
-        transactions = extractTransactions(res.data);
-    } catch (err) {
-        if (['ECONNREFUSED', 'ETIMEDOUT', 'ECONNABORTED'].includes(err.code)) {
-            console.warn('[Web2M Poller] API tạm không phản hồi, thử lại sau...');
-            return;
-        }
-        throw err;
+    if (!config.WEB2M_API_KEY || !config.BANK_ACCOUNT) {
+        console.log('   ⚠️ Chưa cấu hình WEB2M_API_KEY hoặc BANK_ACCOUNT → không gọi API.');
+        return;
     }
 
-    if (!Array.isArray(transactions) || transactions.length === 0) return;
+    const transactions = await fetchTransactions(4, 1500);
+    if (transactions === null) return; // thử hết vẫn lỗi -> chu kỳ sau
 
-    for (const tx of transactions) {
-        const amount = txAmountOf(tx);
-        if (!amount) continue; // không đọc được số tiền -> bỏ qua
-        // Mã GD dùng để chống trùng; nếu API không trả mã, dùng khóa dự phòng theo số tiền
-        const txId = String(txIdOf(tx) || `amt_${amount}`);
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+        console.log(`   [${ts()}] ✅ Gọi API OK nhưng lịch sử giao dịch trống (0 giao dịch).`);
+        return;
+    }
 
-        // Chống xử lý trùng giao dịch (kể cả khi bot restart)
-        if (await orderService.isBankTxProcessed(txId)) continue;
+    const amounts = transactions.map(txParse.amountOf);
+    console.log(`   [${ts()}] ✅ Gọi API OK — lấy về ${transactions.length} giao dịch. Số tiền: [${amounts.join(', ')}]`);
 
-        // Tìm đơn pending có số tiền khớp tuyệt đối
-        const order = pending.find(o => Number(o.amount) === amount && o.status === 'pending');
-        if (!order) continue;
-
-        console.log(`[VCB] ✅ Khớp giao dịch ${order.reference} - ${amount}đ (tx ${txId})`);
-
-        const result = await orderService.confirmPayment(order.id, txId);
-        if (result && result.success) {
-            const dmSent = await paymentService.deliver(result.order, result.items);
-            if (!dmSent) {
-                console.warn(`[VCB] Đã thu tiền ${order.reference} nhưng chưa DM được khách (khách tắt DM?).`);
-            }
-        }
-        // đánh dấu order này đã rời pending trong vòng hiện tại
-        order.status = 'done';
+    const { matched } = await matcher.processTransactions(transactions, 'Poller');
+    if (matched === 0) {
+        console.log(`   [${ts()}] ℹ️ Không có giao dịch nào khớp số tiền đơn đang chờ. (Tiền vào chưa khớp / khách chưa chuyển / sai số tiền)`);
     }
 }
 
 async function tick() {
-    // 1) Hủy đơn hết hạn, nhả hàng
+    console.log(`\n🔄 [${ts()}] ===== Chu kỳ kiểm tra thanh toán (mỗi ${config.PAYMENT_POLL_INTERVAL}s) =====`);
     try {
-        await orderService.expireOrders();
+        const expired = await orderService.expireOrders();
+        if (expired > 0) console.log(`   [${ts()}] Đã hủy ${expired} đơn hết hạn & nhả hàng về kho.`);
     } catch (err) {
-        console.error('[VCB Poller] Lỗi expireOrders:', err.message);
+        console.error(`   [${ts()}] Lỗi expireOrders:`, err.message);
     }
-    // 2) Dò giao dịch mới
     try {
         await checkTransactions();
     } catch (err) {
-        console.error('[VCB Poller] Lỗi checkTransactions:', err.message);
+        console.error(`   [${ts()}] Lỗi checkTransactions:`, err.message);
     }
 }
 
 function start() {
     const intervalMs = (config.PAYMENT_POLL_INTERVAL || 30) * 1000;
     if (!config.WEB2M_API_KEY) {
-        console.warn('⚠️ Chưa cấu hình WEB2M_API_KEY (VCB). Poller vẫn chạy để hủy đơn hết hạn, nhưng CHƯA tự duyệt thanh toán.');
+        console.warn('⚠️ Chưa cấu hình WEB2M_API_KEY. Poller vẫn chạy để hủy đơn hết hạn, nhưng CHƯA tự duyệt thanh toán.');
     } else {
-        console.log(`🔄 VCB Poller đã khởi động (mỗi ${config.PAYMENT_POLL_INTERVAL}s).`);
+        console.log(`🔄 Poller dự phòng đã khởi động (mỗi ${config.PAYMENT_POLL_INTERVAL}s).`);
     }
     pollerInterval = setInterval(tick, intervalMs);
 }
@@ -142,4 +117,4 @@ function stop() {
     if (pollerInterval) { clearInterval(pollerInterval); pollerInterval = null; }
 }
 
-module.exports = { start, stop, tick, checkTransactions };
+module.exports = { start, stop, tick, checkTransactions, fetchTransactions };

@@ -11,6 +11,7 @@ const db = require('./src/utils/mariadb');
 const logService = require('./src/services/logService');
 const paymentService = require('./src/services/mariaPaymentService');
 const vcbPoller = require('./src/utils/vcbPoller');
+const webhookServer = require('./src/utils/webhookServer');
 const interactionHandler = require('./src/events/interactionCreate');
 const readyHandler = require('./src/events/ready');
 const messageHandler = require('./src/events/messageCreate');
@@ -51,7 +52,9 @@ async function start() {
 
     client.once('ready', async () => {
         await readyHandler.handle(client);
-        // Poller VCB: dò thanh toán + tự hủy đơn hết hạn
+        // Webhook (chính): Web2M tự đẩy giao dịch sang - gần như tức thì
+        webhookServer.start();
+        // Poller (dự phòng): hỏi định kỳ + hủy đơn hết hạn nhả hàng
         vcbPoller.start();
     });
 

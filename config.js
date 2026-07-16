@@ -34,6 +34,11 @@ const config = {
     PAYMENT_POLL_INTERVAL: parseInt(process.env.PAYMENT_POLL_INTERVAL) || 30, // giây
     PAYMENT_TIMEOUT: parseInt(process.env.PAYMENT_TIMEOUT) || 15, // phút
 
+    // Webhook Web2M (phương án chính - Web2M tự đẩy giao dịch sang)
+    WEBHOOK_PORT: parseInt(process.env.WEBHOOK_PORT) || 3002,
+    WEBHOOK_PATH: process.env.WEBHOOK_PATH || '/webhook/web2m',
+    WEB2M_WEBHOOK_TOKEN: process.env.WEB2M_WEBHOOK_TOKEN || '',
+
     // Bank QR
     BANK_ID: process.env.BANK_ID || '970422',
     BANK_ACCOUNT: process.env.BANK_ACCOUNT || '',
@@ -69,6 +74,7 @@ config.reload = function() {
     config.WEB2M_ACCOUNT_PASSWORD = process.env.WEB2M_ACCOUNT_PASSWORD || '';
     config.PAYMENT_POLL_INTERVAL = parseInt(process.env.PAYMENT_POLL_INTERVAL) || 30;
     config.PAYMENT_TIMEOUT = parseInt(process.env.PAYMENT_TIMEOUT) || 15;
+    config.WEB2M_WEBHOOK_TOKEN = process.env.WEB2M_WEBHOOK_TOKEN || '';
     config.BANK_ID = process.env.BANK_ID || '970422';
     config.BANK_ACCOUNT = process.env.BANK_ACCOUNT || '';
     config.BANK_NAME = process.env.BANK_NAME || '';
