@@ -6,3 +6,6 @@ uploads/
 database/mongo_data/
 
 database/*.json
+
+# File dump SQL (chứa dữ liệu nhạy cảm - không commit)
+*.sql
