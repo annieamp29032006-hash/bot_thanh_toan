@@ -230,7 +230,8 @@ async function createOrderAndShowQR(interaction, repId, quantity) {
         interaction.user.id,
         interaction.user.username,
         repId,
-        quantity
+        quantity,
+        interaction.channelId
     );
 
     if (!result.success) {
@@ -244,7 +245,16 @@ async function createOrderAndShowQR(interaction, repId, quantity) {
             .setLabel('❌ Hủy giao dịch')
             .setStyle(ButtonStyle.Danger)
     );
-    return interaction.editReply({ content: '', embeds: [embed], components: [row] });
+    const sent = await interaction.editReply({ content: '', embeds: [embed], components: [row] });
+
+    // Ghi lại id tin nhắn QR để lát nữa thanh toán xong còn reply vào đúng nó.
+    // Lỗi ở đây không được làm hỏng đơn - khách vẫn thấy QR bình thường.
+    try {
+        if (sent?.id) await orderService.attachMessageId(result.order.reference, sent.id);
+    } catch (err) {
+        console.error(`[Order] Không lưu được message_id cho ${result.order.reference}:`, err.message);
+    }
+    return sent;
 }
 
 // ═══════════════════════════════════════════════════

@@ -51,7 +51,7 @@ function buildQrUrl(amount) {
 // ═══════════════════════════════════════════════════
 // TẠO ĐƠN
 // ═══════════════════════════════════════════════════
-async function createOrder(userId, username, repId, quantity = 1) {
+async function createOrder(userId, username, repId, quantity = 1, channelId = null) {
     quantity = Math.max(1, parseInt(quantity) || 1);
 
     // Chặn spam: tối đa 2 đơn pending
@@ -87,11 +87,11 @@ async function createOrder(userId, username, repId, quantity = 1) {
 
         await db.query(
             `INSERT INTO bot_orders
-             (reference, discord_user_id, discord_username, category_id, group_id, item_id, item_ids,
+             (reference, discord_user_id, discord_username, channel_id, category_id, group_id, item_id, item_ids,
               product_name, quantity, base_amount, amount, status, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), ?)`,
             [
-                reference, userId, username, null, v.groupId,
+                reference, userId, username, channelId ? String(channelId) : null, null, v.groupId,
                 lock.lockedIds[0], JSON.stringify(lock.lockedIds),
                 v.name, quantity, baseAmount, amount, expiresAt
             ]
@@ -185,8 +185,16 @@ async function expireOrders() {
     return rows.length;
 }
 
+// Lưu id tin nhắn QR để khi thanh toán xong còn biết đường reply vào đúng chỗ
+async function attachMessageId(reference, messageId) {
+    await db.query(
+        'UPDATE bot_orders SET message_id = ? WHERE reference = ?',
+        [String(messageId), reference]
+    );
+}
+
 // ═══════════════════════════════════════════════════
-// Lấy đơn theo reference / danh sách pending (poller dùng)
+// Lấy đơn theo reference / danh sách pending
 // ═══════════════════════════════════════════════════
 async function getPendingOrders() {
     return db.query("SELECT * FROM bot_orders WHERE status = 'pending'");
@@ -215,6 +223,7 @@ function safeParseIds(raw) {
 
 module.exports = {
     createOrder,
+    attachMessageId,
     cancelOrder,
     confirmPayment,
     expireOrders,
