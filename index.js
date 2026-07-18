@@ -3,14 +3,14 @@
  *
  * Kiến trúc: Discord.js v14 + MariaDB (đọc sản phẩm trực tiếp từ web shop).
  * Chống bán trùng: khóa list_items atomic (status 2).
- * Thanh toán: Vietcombank QR + Web2M Poller (khớp số tiền lẻ độc nhất).
+ * Thanh toán: QR ngân hàng + Webhook Web2M (khớp số tiền lẻ độc nhất).
  */
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const config = require('./config');
 const db = require('./src/utils/mariadb');
 const logService = require('./src/services/logService');
 const paymentService = require('./src/services/mariaPaymentService');
-const vcbPoller = require('./src/utils/vcbPoller');
+const orderExpiry = require('./src/utils/orderExpiry');
 const webhookServer = require('./src/utils/webhookServer');
 const interactionHandler = require('./src/events/interactionCreate');
 const readyHandler = require('./src/events/ready');
@@ -52,10 +52,10 @@ async function start() {
 
     client.once('ready', async () => {
         await readyHandler.handle(client);
-        // Webhook (chính): Web2M tự đẩy giao dịch sang - gần như tức thì
+        // Webhook: Web2M tự đẩy giao dịch sang - gần như tức thì
         webhookServer.start();
-        // Poller (dự phòng): hỏi định kỳ + hủy đơn hết hạn nhả hàng
-        vcbPoller.start();
+        // Dọn đơn quá hạn thanh toán, nhả hàng đang khóa về lại kho
+        orderExpiry.start();
     });
 
     client.on('interactionCreate', async (interaction) => {
