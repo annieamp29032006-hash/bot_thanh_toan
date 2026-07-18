@@ -41,8 +41,8 @@ async function processTransactions(transactions, label = '') {
         const result = await orderService.confirmPayment(order.id, txId);
         if (result && result.success) {
             const dmSent = await paymentService.deliver(result.order, result.items);
-            const notified = await paymentService.notifyChannel(result.order, dmSent);
-            console.log(`   🎯 [${label}] KHỚP đơn ${order.reference} = ${amount}đ (GD ${txId}) → giao hàng | DM khách: ${dmSent ? 'THÀNH CÔNG' : 'THẤT BẠI (khách tắt DM?)'} | Báo kênh: ${notified ? 'OK' : 'không'}`);
+            const notified = await paymentService.notifyBuyer(result.order, dmSent);
+            console.log(`   🎯 [${label}] KHỚP đơn ${order.reference} = ${amount}đ (GD ${txId}) → giao hàng | DM khách: ${dmSent ? 'THÀNH CÔNG' : 'THẤT BẠI (khách tắt DM?)'} | Sửa tin QR: ${notified ? 'OK' : 'không (token hết hạn?)'}`);
             matched++;
             order.status = 'done'; // tránh khớp lại trong cùng lượt
         }

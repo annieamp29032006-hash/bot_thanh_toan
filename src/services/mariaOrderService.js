@@ -51,7 +51,7 @@ function buildQrUrl(amount) {
 // ═══════════════════════════════════════════════════
 // TẠO ĐƠN
 // ═══════════════════════════════════════════════════
-async function createOrder(userId, username, repId, quantity = 1, channelId = null) {
+async function createOrder(userId, username, repId, quantity = 1, channelId = null, interactionToken = null) {
     quantity = Math.max(1, parseInt(quantity) || 1);
 
     // Chặn spam: tối đa 2 đơn pending
@@ -87,11 +87,11 @@ async function createOrder(userId, username, repId, quantity = 1, channelId = nu
 
         await db.query(
             `INSERT INTO bot_orders
-             (reference, discord_user_id, discord_username, channel_id, category_id, group_id, item_id, item_ids,
+             (reference, discord_user_id, discord_username, channel_id, interaction_token, category_id, group_id, item_id, item_ids,
               product_name, quantity, base_amount, amount, status, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), ?)`,
             [
-                reference, userId, username, channelId ? String(channelId) : null, null, v.groupId,
+                reference, userId, username, channelId ? String(channelId) : null, interactionToken, null, v.groupId,
                 lock.lockedIds[0], JSON.stringify(lock.lockedIds),
                 v.name, quantity, baseAmount, amount, expiresAt
             ]

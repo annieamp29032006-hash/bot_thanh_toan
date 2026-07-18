@@ -231,7 +231,8 @@ async function createOrderAndShowQR(interaction, repId, quantity) {
         interaction.user.username,
         repId,
         quantity,
-        interaction.channelId
+        interaction.channelId,
+        interaction.token
     );
 
     if (!result.success) {

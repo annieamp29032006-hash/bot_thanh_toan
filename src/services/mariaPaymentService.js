@@ -2,7 +2,8 @@
  * mariaPaymentService.js - Giao hàng qua DM sau khi thanh toán được xác nhận,
  * kèm báo "đã thanh toán" về đúng kênh đã gửi QR.
  */
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, Routes } = require('discord.js');
+const config = require('../../config');
 
 let _client = null;
 function setClient(client) { _client = client; }
@@ -49,26 +50,30 @@ async function deliver(order, items) {
 }
 
 /**
- * Báo thanh toán thành công về đúng kênh đã gửi QR (reply vào tin nhắn QR nếu còn).
+ * Báo thanh toán thành công cho riêng người mua, bằng cách SỬA chính tin nhắn QR
+ * ephemeral thành thông báo thành công.
  *
- * CỐ Ý không kèm user/pass hay code ở đây - kênh có thể là kênh chung, thông tin
- * sản phẩm chỉ đi qua DM. Ở đây chỉ xác nhận tiền đã vào.
+ * Vì sao phải sửa tin cũ chứ không gửi tin mới: Discord chỉ cho tin ephemeral tồn tại
+ * như phản hồi của một interaction - channel.send() luôn công khai. Sửa tin QR vừa giữ
+ * được tính riêng tư, vừa dọn luôn mã QR đã dùng xong.
  *
- * Trả về true nếu đã gửi được.
+ * GIỚI HẠN: interaction token chỉ sống 15 phút. Trùng với PAYMENT_TIMEOUT nên hầu hết
+ * đơn kịp, nhưng đơn thanh toán ở phút chót có thể lỡ - khi đó chỉ ghi log, KHÔNG gửi
+ * bù ra kênh chung vì sẽ lộ đơn của khách cho người khác thấy. Khách vẫn nhận hàng
+ * qua DM bình thường.
+ *
+ * CỐ Ý không kèm user/pass hay code ở đây - thông tin sản phẩm chỉ đi qua DM.
+ *
+ * Trả về true nếu sửa được.
  */
-async function notifyChannel(order, dmSent) {
-    if (!_client || !order.channel_id) return false;
+async function notifyBuyer(order, dmSent) {
+    if (!_client || !order.interaction_token) return false;
 
     try {
-        const channel = await _client.channels.fetch(order.channel_id);
-        if (!channel || !channel.isTextBased()) return false;
-        // Đơn đặt ngay trong DM thì deliver() đã gửi vào đó rồi, không lặp lại
-        if (channel.isDMBased()) return false;
-
         const embed = new EmbedBuilder()
             .setTitle('✅ THANH TOÁN THÀNH CÔNG')
             .setDescription(
-                `<@${order.discord_user_id}> đã thanh toán thành công!\n\n` +
+                `Cảm ơn bạn đã ủng hộ Kaiz Store!\n\n` +
                 `🏷️ **Mã đơn:** \`${order.reference}\`\n` +
                 `🛒 **Sản phẩm:** \`${order.product_name}\` (x${order.quantity})\n` +
                 `💰 **Số tiền:** \`${Number(order.amount).toLocaleString('vi-VN')} VNĐ\`\n\n` +
@@ -81,18 +86,16 @@ async function notifyChannel(order, dmSent) {
             .setFooter({ text: '© 2026 Kaiz Store | Hệ thống tự động' })
             .setTimestamp();
 
-        const payload = { embeds: [embed] };
-        // Reply vào tin nhắn QR cho dễ theo dõi; tin nhắn bị xoá thì gửi thường
-        if (order.message_id) {
-            payload.reply = { messageReference: String(order.message_id), failIfNotExists: false };
-        }
-
-        await channel.send(payload);
+        // Sửa phản hồi gốc của interaction (chính là tin nhắn QR), bỏ nút "Hủy giao dịch"
+        await _client.rest.patch(
+            Routes.webhookMessage(config.CLIENT_ID, order.interaction_token, '@original'),
+            { body: { embeds: [embed.toJSON()], components: [] } }
+        );
         return true;
     } catch (err) {
-        console.error(`[Notify] Không báo được vào kênh ${order.channel_id}:`, err.message);
+        console.error(`[Notify] Không sửa được tin QR của đơn ${order.reference}:`, err.message);
         return false;
     }
 }
 
-module.exports = { setClient, deliver, notifyChannel };
+module.exports = { setClient, deliver, notifyBuyer };
