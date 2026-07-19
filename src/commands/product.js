@@ -3,6 +3,7 @@
  */
 const { SlashCommandBuilder, PermissionsBitField, AttachmentBuilder, ChannelType } = require('discord.js');
 const productService = require('../services/productService');
+const Category = require('../models/Category');
 const stockService = require('../services/stockService');
 const imageUploader = require('../utils/imageUploader');
 const embeds = require('../utils/embedBuilder');
@@ -29,6 +30,12 @@ const command = new SlashCommandBuilder()
             )
         )
         .addIntegerOption(opt => opt.setName('price').setDescription('Giá (VNĐ)').setRequired(true))
+        .addStringOption(opt => opt
+            .setName('danh_muc')
+            .setDescription('Danh mục cấp 2 chứa sản phẩm (gõ để tìm)')
+            .setRequired(true)
+            .setAutocomplete(true)
+        )
         .addStringOption(opt => opt.setName('code').setDescription('Mã sản phẩm ngắn gọn (VD: VALO-01) để nạp auto').setRequired(false))
         .addStringOption(opt => opt.setName('description').setDescription('Mô tả ngắn gọn').setRequired(false))
         .addAttachmentOption(opt => opt.setName('image').setDescription('Ảnh sản phẩm').setRequired(false))
@@ -83,6 +90,20 @@ async function execute(interaction) {
         const description = interaction.options.getString('description') || '';
         const attachment = interaction.options.getAttachment('image');
         const channel = interaction.options.getChannel('channel');
+        const webCategory = interaction.options.getString('danh_muc');
+
+        // Sản phẩm PHẢI nằm ở danh mục cấp 2. Gắn vào cấp 1 (hoặc để mặc định như
+        // trước đây) thì menu bot không bao giờ hiện nó ra - lỗi im lặng, rất khó truy.
+        const cat = await Category.findOne({ key: webCategory }).lean();
+        if (!cat) {
+            return interaction.editReply(`❌ Không tìm thấy danh mục \`${webCategory}\`. Hãy chọn từ danh sách gợi ý.`);
+        }
+        if (!cat.parentKey) {
+            return interaction.editReply(
+                `❌ **${cat.name}** là danh mục cấp 1. Sản phẩm phải thuộc danh mục **cấp 2**.\n` +
+                `Hãy tạo danh mục con bên trong nó ở trang nhập liệu rồi chọn danh mục con đó.`
+            );
+        }
 
         let imageUrl = '';
         if (attachment) {
@@ -90,9 +111,9 @@ async function execute(interaction) {
         }
 
         try {
-            const data = { 
-                name, type, price, description, imageUrl, 
-                displayChannelId: channel ? channel.id : '' 
+            const data = {
+                name, type, price, description, imageUrl, webCategory,
+                displayChannelId: channel ? channel.id : ''
             };
             if (code) data.code = code;
 
@@ -243,4 +264,28 @@ function fetchFile(url) {
     });
 }
 
-module.exports = { command, execute };
+/**
+ * Gợi ý danh mục khi gõ /product add. CHỈ liệt kê danh mục cấp 2 vì sản phẩm
+ * gắn vào cấp 1 sẽ không bao giờ hiện ra trong menu mua hàng.
+ */
+async function autocomplete(interaction) {
+    const focused = (interaction.options.getFocused() || '').toLowerCase();
+
+    const children = await Category.find({ parentKey: { $ne: null } })
+        .sort({ sortOrder: 1, name: 1 }).limit(100).lean();
+
+    const parents = await Category.find({ parentKey: null }).lean();
+    const parentName = new Map(parents.map(p => [p.key, p.name]));
+
+    const choices = children
+        .map(c => ({
+            name: `${parentName.get(c.parentKey) || c.parentKey} › ${c.name}`.slice(0, 100),
+            value: c.key
+        }))
+        .filter(c => !focused || c.name.toLowerCase().includes(focused) || c.value.includes(focused))
+        .slice(0, 25); // Discord chỉ nhận tối đa 25 gợi ý
+
+    return interaction.respond(choices);
+}
+
+module.exports = { command, execute, autocomplete };

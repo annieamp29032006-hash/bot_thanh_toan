@@ -28,6 +28,24 @@ const commandMap = {
 async function handle(interaction) {
     try {
         // ═══════════════════════════════════════
+        // AUTOCOMPLETE (gợi ý khi đang gõ lệnh)
+        // Phải xử lý TRƯỚC và trả nhanh - Discord chỉ chờ 3 giây.
+        // ═══════════════════════════════════════
+        if (interaction.isAutocomplete()) {
+            const handler = commandMap[interaction.commandName];
+            if (handler && typeof handler.autocomplete === 'function') {
+                try {
+                    return await handler.autocomplete(interaction);
+                } catch (err) {
+                    console.error('[Autocomplete] Lỗi:', err.message);
+                    // Trả danh sách rỗng còn hơn để Discord treo
+                    if (!interaction.responded) await interaction.respond([]).catch(() => {});
+                }
+            }
+            return;
+        }
+
+        // ═══════════════════════════════════════
         // SLASH COMMANDS
         // ═══════════════════════════════════════
         if (interaction.isChatInputCommand()) {
