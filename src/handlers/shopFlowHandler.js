@@ -7,10 +7,14 @@
  *   1. Danh mục cấp 1   (open_shop_menu / mroot)  -> mc1_<key>
  *   2. Danh mục cấp 2   (mc1_<key>)               -> mc2_<key>      | back: mroot
  *   3. Sản phẩm         (mc2_<key>)               -> mprod_<id>     | back: mc1_<parent>
- *   4. Chi tiết + SL    (mprod_<id>)              -> mbuy_<id>_<sl> | back: mc2_<key>
- *   5. QR thanh toán    (mbuy_...)                -> mcancel_<ref>
+ *   4. Chi tiết          (mprod_<id>)              -> mqtyask_<id>   | back: mc2_<key>
+ *   5. Ô nhập số lượng   (modal mqtymodal_<id>)    -> tạo đơn + QR
+ *   6. QR thanh toán                               -> mcancel_<ref>
  *
  * Phân trang cũng bằng nút: mc2p_/mprodp_<key>_<trang>.
+ *
+ * mbuy_<id>_<sl> là nhánh của các nút mốc số lượng đã bỏ. Giữ lại vì tin nhắn ẩn
+ * cũ trong máy khách vẫn còn nút đó - bỏ nhánh thì bấm vào sẽ "interaction failed".
  *
  * Giới hạn Discord: tối đa 5 hàng x 5 nút = 25 component mỗi tin nhắn. Chừa 1 hàng
  * cho điều hướng nên mỗi trang hiển thị tối đa 20 mục.
@@ -27,7 +31,7 @@ const GOLD = '#FFD700';
 const DANGER = '#ff4d4d';
 const CATS_PER_PAGE = 9;   // danh mục: tối đa 9 vì mỗi cái kèm 1 embed ảnh (Discord cho 10 embed)
 const PER_PAGE = 3;        // sản phẩm: 3 mỗi trang, xếp gọn 1 hàng
-const QTY_CHOICES = [1, 2, 3, 5, 10];
+
 
 function catEmoji(name) {
     const n = (name || '').toLowerCase();
@@ -247,24 +251,17 @@ async function showDetail(interaction, productId) {
 
     // VIP chỉ bán 1 mỗi đơn (orderService cũng ép lại, đây chỉ là hiển thị)
     const maxQty = p.type === 'vip' ? 1 : p.avail;
-    const choices = QTY_CHOICES.filter(n => n <= maxQty);
-    if (!choices.length) choices.push(1);
 
-    const rows = buttonRows(choices, n => new ButtonBuilder()
-        .setCustomId(`mbuy_${p.id}_${n}`)
-        .setLabel(`Mua ${n} — ${(n * p.price).toLocaleString('vi-VN')}đ`.slice(0, 80))
-        .setStyle(ButtonStyle.Success), 3);
-
-    // Nút nhập số lượng tự do: các mốc sẵn không phủ hết (vd còn 7 thì không có nút 7),
-    // và khách mua sỉ cần con số bất kỳ. Chỉ hiện khi còn nhiều hơn 1 cái.
-    if (maxQty > 1) {
-        rows.push(new ActionRowBuilder().addComponents(
+    // Một nút duy nhất mở ô nhập số lượng. Bỏ các nút mốc 1/2/3/5/10 vì chúng vừa
+    // chiếm chỗ vừa không bao giờ phủ hết mọi con số khách cần.
+    const rows = [
+        new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`mqtyask_${p.id}`)
-                .setLabel(`✏️ Nhập số lượng khác (tối đa ${maxQty})`)
-                .setStyle(ButtonStyle.Secondary)
-        ));
-    }
+                .setLabel(`🛒 Nhập số lượng cần mua (tối đa ${maxQty})`)
+                .setStyle(ButtonStyle.Success)
+        )
+    ];
 
     rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Trở Về' }));
 
