@@ -87,25 +87,87 @@ async function getChildCategories(parentKey) {
         .filter(c => c.avail > 0);
 }
 
-/** Sản phẩm còn hàng trong một danh mục cấp 2 (màn thứ ba) */
+/**
+ * Danh sách mặt hàng bày ra trong một danh mục (màn thứ ba).
+ *
+ * Hai kiểu bày khác nhau:
+ *   - 'code' (bán số lượng): gộp thành MỘT dòng, khách chọn số lượng.
+ *   - 'account'/'vip' (bán đích danh): TÁCH RA từng cái, vì mỗi tài khoản là một
+ *     món khác nhau (ảnh riêng, thông tin riêng). Gộp lại thành "còn 3" là sai
+ *     bản chất - khách không biết mình mua cái nào.
+ */
 async function getProducts(childKey) {
     const products = await Product.find({ isActive: true, webCategory: childKey })
         .sort({ price: 1, name: 1 }).lean();
     if (!products.length) return [];
 
     const availMap = await countAvailableByProduct(products.map(p => p._id));
+    const out = [];
 
-    return products
-        .map(p => ({
-            id: String(p._id),
-            name: p.name,
-            type: p.type,
-            price: p.price,
-            description: p.description || '',
-            imageUrl: p.imageUrl || '',
-            avail: availMap.get(String(p._id)) || 0
-        }))
-        .filter(p => p.avail > 0);
+    for (const p of products) {
+        const avail = availMap.get(String(p._id)) || 0;
+        if (!avail) continue;
+
+        if (p.type === 'code') {
+            out.push({
+                kind: 'product',
+                id: String(p._id),
+                name: p.name,
+                type: p.type,
+                price: p.price,
+                description: p.description || '',
+                imageUrl: p.imageUrl || '',
+                avail
+            });
+            continue;
+        }
+
+        // Bán đích danh: mỗi cái trong kho thành một dòng riêng
+        const stocks = await ProductStock.find({ productId: p._id, status: 'available' })
+            .sort({ createdAt: 1 }).lean();
+
+        stocks.forEach((s, i) => {
+            out.push({
+                kind: 'stock',
+                id: String(s._id),
+                productId: String(p._id),
+                name: stocks.length > 1 ? `${p.name} #${i + 1}` : p.name,
+                type: p.type,
+                price: p.price,
+                description: p.description || '',
+                imageUrl: s.imageUrl || p.imageUrl || '',
+                avail: 1
+            });
+        });
+    }
+
+    return out;
+}
+
+/** Một tài khoản cụ thể trong kho (màn chi tiết của hàng đích danh) */
+async function getStockItem(stockId) {
+    let s;
+    try {
+        s = await ProductStock.findOne({ _id: stockId }).lean();
+    } catch {
+        return null; // id không hợp lệ
+    }
+    if (!s) return null;
+
+    const p = await Product.findById(s.productId).lean();
+    if (!p || !p.isActive) return null;
+
+    return {
+        stockId: String(s._id),
+        productId: String(p._id),
+        name: p.name,
+        type: p.type,
+        price: p.price,
+        description: p.description || '',
+        imageUrl: s.imageUrl || p.imageUrl || '',
+        webCategory: p.webCategory,
+        available: s.status === 'available'
+    };
 }
 
 /** Một sản phẩm cụ thể + tồn kho hiện tại (màn chi tiết) */
@@ -161,5 +223,6 @@ module.exports = {
     getCategory,
     getProducts,
     getProduct,
+    getStockItem,
     countAvailable
 };

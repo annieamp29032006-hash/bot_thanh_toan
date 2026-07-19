@@ -192,13 +192,16 @@ async function showProducts(interaction, childKey, page = 1) {
     const { items, page: p, totalPages } = paginate(all, page); // PER_PAGE = 3
     const catName = cat ? cat.name : childKey;
 
-    // Giá và tồn kho liệt kê ngay trong nội dung để khách thấy trước khi bấm
+    // Giá và tồn kho liệt kê ngay trong nội dung để khách thấy trước khi bấm.
+    // Hàng đích danh mỗi dòng là một cái nên không hiện "còn N".
     const lines = items.map(pr =>
-        `> 🛒 **${pr.name.trim()}** — \`${pr.price.toLocaleString('vi-VN')}đ\` • còn \`${pr.avail}\``
+        `> 🛒 **${pr.name.trim()}** — \`${pr.price.toLocaleString('vi-VN')}đ\`` +
+        (pr.kind === 'stock' ? '' : ` • còn \`${pr.avail}\``)
     ).join('\n');
 
     const rows = buttonRows(items, pr => new ButtonBuilder()
-        .setCustomId(`mprod_${pr.id}`)
+        // 'stock' = một tài khoản cụ thể, 'product' = mặt hàng bán theo số lượng
+        .setCustomId(pr.kind === 'stock' ? `mstk_${pr.id}` : `mprod_${pr.id}`)
         .setLabel(`${pr.name.trim()}`.slice(0, 80))
         .setEmoji('🛒')
         .setStyle(ButtonStyle.Primary));
@@ -272,6 +275,89 @@ async function showDetail(interaction, productId) {
     rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Trở Về' }));
 
     return interaction.update({ content: '', embeds: [embed], components: rows });
+}
+
+// ═══════════════════════════════════════════════════
+// MÀN 4b: CHI TIẾT MỘT TÀI KHOẢN CỤ THỂ (hàng bán đích danh)
+// ═══════════════════════════════════════════════════
+async function showStockDetail(interaction, stockId) {
+    const s = await catalog.getStockItem(stockId);
+    if (!s || !s.available) {
+        return interaction.update({
+            content: '⚠️ Tài khoản này vừa có người mua mất. Vui lòng chọn cái khác!',
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
+        });
+    }
+
+    let desc = `💰 **Giá:** \`${s.price.toLocaleString('vi-VN')}đ\`\n`;
+    if (s.description) {
+        const lines = s.description.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 12);
+        if (lines.length) desc += `\n**Thông tin sản phẩm:**\n` + lines.map(l => `> 🔹 ${l}`).join('\n');
+    }
+    desc += `\n\n*Thông tin đăng nhập sẽ được gửi ngay vào tin nhắn riêng sau khi thanh toán.*` +
+            `\n\n**Bấm mua để đặt hàng 👇**`;
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🛒 ${s.name}`)
+        .setDescription(desc)
+        .setColor(GOLD);
+    if (s.imageUrl) embed.setImage(s.imageUrl);
+
+    return interaction.update({
+        content: '',
+        embeds: [embed],
+        components: [
+            new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`mbuystk_${s.stockId}`)
+                    .setLabel(`🛒 Mua ngay — ${s.price.toLocaleString('vi-VN')}đ`)
+                    .setStyle(ButtonStyle.Success)
+            ),
+            navRow({ backId: `mc2_${s.webCategory}`, backLabel: '⬅️ Trở Về' })
+        ]
+    });
+}
+
+/** Đặt đơn cho đúng một tài khoản cụ thể */
+async function createSpecificOrderAndShowQR(interaction, stockId) {
+    await interaction.deferUpdate();
+
+    const s = await catalog.getStockItem(stockId);
+    if (!s) {
+        return interaction.editReply({
+            content: '❌ Không tìm thấy sản phẩm.',
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
+        });
+    }
+
+    const result = await orderService.createSpecificOrder(
+        interaction.user.id,
+        interaction.user.username,
+        s.productId,
+        s.stockId,
+        interaction.token
+    );
+
+    if (!result.success) {
+        return interaction.editReply({
+            content: `❌ ${result.message}`,
+            embeds: [],
+            components: [navRow({ backId: `mc2_${s.webCategory}`, backLabel: '⬅️ Trở Về' })]
+        });
+    }
+
+    return interaction.editReply({
+        content: '',
+        embeds: [paymentEmbed(result.order, result.qrUrl)],
+        components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`mcancel_${result.order.reference}`)
+                .setLabel('❌ Hủy giao dịch')
+                .setStyle(ButtonStyle.Danger)
+        )]
+    });
 }
 
 // ═══════════════════════════════════════════════════
@@ -459,6 +545,8 @@ async function route(interaction) {
     if (id.startsWith('mc1_')) { await showChildren(interaction, id.slice(4), 1); return true; }
     if (id.startsWith('mc2_')) { await showProducts(interaction, id.slice(4), 1); return true; }
     if (id.startsWith('mqtyask_')) { await askQuantity(interaction, id.slice(8)); return true; }
+    if (id.startsWith('mbuystk_')) { await createSpecificOrderAndShowQR(interaction, id.slice(8)); return true; }
+    if (id.startsWith('mstk_')) { await showStockDetail(interaction, id.slice(5)); return true; }
     if (id.startsWith('mprod_')) { await showDetail(interaction, id.slice(6)); return true; }
     if (id.startsWith('mbuy_')) {
         const rest = id.slice(5);
