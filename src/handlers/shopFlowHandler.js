@@ -16,7 +16,8 @@
  * cho điều hướng nên mỗi trang hiển thị tối đa 20 mục.
  */
 const {
-    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle
+    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+    ModalBuilder, TextInputBuilder, TextInputStyle
 } = require('discord.js');
 const catalog = require('../services/catalogService');
 const orderService = require('../services/orderService');
@@ -252,11 +253,88 @@ async function showDetail(interaction, productId) {
     const rows = buttonRows(choices, n => new ButtonBuilder()
         .setCustomId(`mbuy_${p.id}_${n}`)
         .setLabel(`Mua ${n} — ${(n * p.price).toLocaleString('vi-VN')}đ`.slice(0, 80))
-        .setStyle(ButtonStyle.Success), 4);
+        .setStyle(ButtonStyle.Success), 3);
+
+    // Nút nhập số lượng tự do: các mốc sẵn không phủ hết (vd còn 7 thì không có nút 7),
+    // và khách mua sỉ cần con số bất kỳ. Chỉ hiện khi còn nhiều hơn 1 cái.
+    if (maxQty > 1) {
+        rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`mqtyask_${p.id}`)
+                .setLabel(`✏️ Nhập số lượng khác (tối đa ${maxQty})`)
+                .setStyle(ButtonStyle.Secondary)
+        ));
+    }
 
     rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Trở Về' }));
 
     return interaction.update({ content: '', embeds: [embed], components: rows });
+}
+
+// ═══════════════════════════════════════════════════
+// Ô NHẬP SỐ LƯỢNG TỰ DO
+// ═══════════════════════════════════════════════════
+async function askQuantity(interaction, productId) {
+    const p = await catalog.getProduct(productId);
+    if (!p || p.avail === 0) {
+        return interaction.update({
+            content: '⚠️ Sản phẩm này vừa hết hàng. Vui lòng chọn sản phẩm khác!',
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
+        });
+    }
+
+    const input = new TextInputBuilder()
+        .setCustomId('qty')
+        .setLabel(`Số lượng (còn ${p.avail} sản phẩm)`)
+        .setPlaceholder(`Nhập số từ 1 đến ${p.avail}`)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(6);
+
+    const modal = new ModalBuilder()
+        .setCustomId(`mqtymodal_${p.id}`)
+        .setTitle(`Mua: ${p.name.trim()}`.slice(0, 45))
+        .addComponents(new ActionRowBuilder().addComponents(input));
+
+    return interaction.showModal(modal);
+}
+
+/** Xử lý khi khách bấm Gửi ở ô nhập số lượng */
+async function handleQuantityModal(interaction, productId) {
+    const raw = (interaction.fields.getTextInputValue('qty') || '').trim();
+    const qty = parseInt(raw, 10);
+
+    const p = await catalog.getProduct(productId);
+    if (!p || p.avail === 0) {
+        await interaction.deferUpdate();
+        return interaction.editReply({
+            content: '⚠️ Sản phẩm này vừa hết hàng. Vui lòng chọn sản phẩm khác!',
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
+        });
+    }
+
+    // Kiểm tra ngay tại đây để báo lỗi rõ ràng, thay vì để createOrder từ chối
+    // bằng thông báo chung chung sau khi đã khoá hàng hụt.
+    if (!raw || isNaN(qty) || qty < 1) {
+        await interaction.deferUpdate();
+        return interaction.editReply({
+            content: `❌ "${raw}" không phải số hợp lệ. Vui lòng nhập số từ 1 đến ${p.avail}.`,
+            embeds: [],
+            components: [navRow({ backId: `mprod_${p.id}`, backLabel: '⬅️ Thử lại' })]
+        });
+    }
+    if (qty > p.avail) {
+        await interaction.deferUpdate();
+        return interaction.editReply({
+            content: `❌ Kho chỉ còn **${p.avail}** sản phẩm, không đủ ${qty}. Vui lòng nhập số nhỏ hơn.`,
+            embeds: [],
+            components: [navRow({ backId: `mprod_${p.id}`, backLabel: '⬅️ Thử lại' })]
+        });
+    }
+
+    return createOrderAndShowQR(interaction, productId, qty);
 }
 
 // ═══════════════════════════════════════════════════
@@ -377,6 +455,7 @@ async function route(interaction) {
 
     if (id.startsWith('mc1_')) { await showChildren(interaction, id.slice(4), 1); return true; }
     if (id.startsWith('mc2_')) { await showProducts(interaction, id.slice(4), 1); return true; }
+    if (id.startsWith('mqtyask_')) { await askQuantity(interaction, id.slice(8)); return true; }
     if (id.startsWith('mprod_')) { await showDetail(interaction, id.slice(6)); return true; }
     if (id.startsWith('mbuy_')) {
         const rest = id.slice(5);
@@ -389,4 +468,14 @@ async function route(interaction) {
     return false;
 }
 
-module.exports = { route, showCategories: showRoots };
+/** Router cho modal - trả về true nếu đã xử lý */
+async function routeModal(interaction) {
+    const id = interaction.customId;
+    if (id.startsWith('mqtymodal_')) {
+        await handleQuantityModal(interaction, id.slice(10));
+        return true;
+    }
+    return false;
+}
+
+module.exports = { route, routeModal, showCategories: showRoots };

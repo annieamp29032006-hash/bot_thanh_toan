@@ -76,6 +76,8 @@ async function handle(interaction) {
         // MODALS
         // ═══════════════════════════════════════
         if (interaction.isModalSubmit()) {
+            // Ưu tiên luồng shop (ô nhập số lượng), không khớp thì rơi xuống handler cũ
+            if (await shopFlowHandler.routeModal(interaction)) return;
             return await modalHandler.handle(interaction);
         }
     } catch (error) {
