@@ -407,11 +407,10 @@ Nếu bán Code: Mã_Code
                 <label>Tên Mặt Hàng:</label>
                 <input type="text" id="newName" placeholder="VD: Gcoin 20000, Acc VIP..." required>
                 
-                <label>Kiểu Bán (Phân loại lúc đăng sản phẩm):</label>
-                <select id="newType" required>
-                    <option value="code">Bán số lượng (Code chung / nhiều mã cùng lúc)</option>
-                    <option value="account">Bán từng cái 1 (Acc/Tài khoản đích danh)</option>
-                </select>
+                <label>Kiểu Bán <span style="color:#8b949e;font-weight:400;">(lấy theo danh mục, đổi ở tab Danh Mục)</span>:</label>
+                <div id="newTypeHint" style="padding:12px 15px; border:1px dashed var(--glass-border); border-radius:8px; background:rgba(0,0,0,0.15); color:#8b949e; margin-bottom:20px;">
+                    Chọn danh mục ở trên để biết kiểu bán.
+                </div>
                 
                 <button type="submit" id="addBtn">Lưu Mặt Hàng</button>
             </form>
@@ -642,14 +641,13 @@ Nếu bán Code: Mã_Code
         e.preventDefault();
         const cat = document.getElementById('newCat').value;
         const name = document.getElementById('newName').value;
-        const type = document.getElementById('newType').value;
         const msgDiv = document.getElementById('addMsg');
         
         try {
             const res = await fetch('/api/groups', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category: cat, name: name, type: type })
+                body: JSON.stringify({ category: cat, name: name })  // kiểu bán suy từ danh mục
             });
             const result = await res.json();
             if(result.success) {
@@ -1163,12 +1161,36 @@ async function loadGroupOptions() {
         }
         sel.innerHTML = '<option value="">-- Chọn danh mục cấp 2 --</option>' + opts.join('');
         if (current) sel.value = current;
+        updateTypeHint();
     } catch (e) {
         sel.innerHTML = '<option value="">-- Lỗi tải danh mục --</option>';
     }
 }
 
 document.addEventListener('DOMContentLoaded', loadGroupOptions);
+
+
+// Kiểu bán không chọn ở đây nữa - nó thuộc về danh mục. Hiện lại cho người dùng thấy
+// mặt hàng sắp tạo sẽ được bày kiểu gì, để khỏi phải nhớ mình cấu hình danh mục ra sao.
+function updateTypeHint() {
+    const sel = document.getElementById('newCat');
+    const hint = document.getElementById('newTypeHint');
+    if (!sel || !hint) return;
+    const key = sel.value;
+    if (!key) {
+        hint.innerHTML = 'Chọn danh mục ở trên để biết kiểu bán.';
+        return;
+    }
+    const c = findCat(key);
+    if (!c) { hint.innerHTML = 'Chọn danh mục ở trên để biết kiểu bán.'; return; }
+    hint.innerHTML = c.sellMode === 'specific'
+        ? '🎯 <b style="color:#ffd700;">Bán đích danh</b> — mỗi cái nạp vào kho là một món riêng, khách chọn theo ảnh. Nạp kho theo dạng <code>user|pass</code>.'
+        : '📦 <b style="color:#00D8FF;">Bán theo số lượng</b> — gộp chung, khách nhập số lượng cần mua. Nạp kho mỗi dòng một mã.';
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('newCat');
+    if (sel) sel.addEventListener('change', updateTypeHint);
+});
 
 </script>
 

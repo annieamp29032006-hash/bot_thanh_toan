@@ -371,14 +371,20 @@ app.get('/api/groups', async (req, res) => {
 
 app.post('/api/groups', async (req, res) => {
     try {
-        const { category, name, type } = req.body;
-        if (!name || !type) return res.status(400).json({ error: 'Thiếu thông tin' });
+        const { category, name } = req.body;
+        if (!name) return res.status(400).json({ error: 'Thiếu tên mặt hàng' });
         if (!category) return res.status(400).json({ error: 'Chưa chọn danh mục' });
 
         // Mặt hàng gắn được vào cả cấp 1 lẫn cấp 2. Bot tự xử: cấp 1 nào chưa có
         // danh mục con thì bấm vào ra thẳng sản phẩm.
         const cat = await Category.findOne({ key: category });
         if (!cat) return res.status(400).json({ error: `Không tìm thấy danh mục "${category}"` });
+
+        // Kiểu bán SUY TỪ DANH MỤC, không cho chọn riêng ở đây nữa - để hai chỗ cùng
+        // cấu hình thì sớm muộn cũng lệch nhau, mà lệch thì hàng bày sai kiểu.
+        // 'specific' -> account: nạp kho dạng user|pass, bày tách từng cái.
+        // 'quantity' -> code:    nạp kho mỗi dòng một mã, bày gộp theo số lượng.
+        const type = cat.sellMode === 'specific' ? 'account' : 'code';
 
         const newProduct = await Product.create({
             name: name,
@@ -529,7 +535,24 @@ app.put('/api/categories/:key', async (req, res) => {
             { key: req.params.key }, { $set: update }, { new: true }
         );
         if (!cat) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
-        res.json({ success: true, message: 'Đã lưu danh mục', data: cat });
+
+        // Đổi kiểu bán thì đồng bộ luôn type của mặt hàng trong danh mục. Không đồng bộ
+        // thì danh mục bày kiểu này còn hàng lại giao kiểu kia - lỗi chỉ lộ ra lúc giao hàng.
+        let synced = 0;
+        if (update.sellMode) {
+            const wantType = update.sellMode === 'specific' ? 'account' : 'code';
+            const r = await Product.updateMany(
+                { webCategory: cat.key, type: { $ne: wantType } },
+                { $set: { type: wantType } }
+            );
+            synced = r.modifiedCount || 0;
+        }
+
+        res.json({
+            success: true,
+            message: 'Đã lưu danh mục' + (synced ? ` (đã đổi kiểu bán cho ${synced} mặt hàng bên trong)` : ''),
+            data: cat
+        });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
