@@ -24,7 +24,8 @@ const orderService = require('../services/orderService');
 const BRAND = '#00D8FF';
 const GOLD = '#FFD700';
 const DANGER = '#ff4d4d';
-const PER_PAGE = 20;      // 4 hàng x 5 nút
+const CATS_PER_PAGE = 9;   // danh mục: tối đa 9 vì mỗi cái kèm 1 embed ảnh (Discord cho 10 embed)
+const PER_PAGE = 3;        // sản phẩm: 3 mỗi trang, xếp gọn 1 hàng
 const QTY_CHOICES = [1, 2, 3, 5, 10];
 
 function catEmoji(name) {
@@ -72,10 +73,28 @@ function navRow({ backId, backLabel, prevId, nextId }) {
     return row;
 }
 
-function paginate(all, page) {
-    const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+function paginate(all, page, perPage = PER_PAGE) {
+    const totalPages = Math.max(1, Math.ceil(all.length / perPage));
     page = Math.min(Math.max(1, page), totalPages);
-    return { items: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), page, totalPages };
+    return { items: all.slice((page - 1) * perPage, page * perPage), page, totalPages };
+}
+
+/**
+ * Ảnh danh mục hiện dưới dạng embed kèm thumbnail. Danh mục nào chưa đặt ảnh thì
+ * KHÔNG tạo embed - để màn hình gọn đúng kiểu chữ + nút, không đẻ ra ô trống.
+ */
+function categoryEmbeds(items) {
+    return items
+        .filter(c => c.imageUrl)
+        .slice(0, 9)
+        .map(c => {
+            const e = new EmbedBuilder()
+                .setTitle(`${catEmoji(c.name)} ${c.name}`)
+                .setDescription(`📦 Còn \`${c.avail}\` sản phẩm`)
+                .setColor(BRAND);
+            e.setThumbnail(c.imageUrl);
+            return e;
+        });
 }
 
 // ═══════════════════════════════════════════════════
@@ -91,31 +110,19 @@ async function showRoots(interaction) {
         });
     }
 
-    // Mỗi embed chỉ mang được một ảnh -> mỗi danh mục một embed để ảnh hiện ra.
-    // Discord cho tối đa 10 embed mỗi tin nhắn.
-    const shown = roots.slice(0, 9);
-    const embeds = [
-        new EmbedBuilder()
-            .setTitle('🌟 DANH MỤC SẢN PHẨM')
-            .setDescription('Chọn danh mục bạn muốn mua 👇')
-            .setColor(BRAND)
-    ];
-    for (const r of shown) {
-        const e = new EmbedBuilder()
-            .setTitle(`${catEmoji(r.name)} ${r.name}`)
-            .setDescription(`📦 Còn \`${r.avail}\` sản phẩm`)
-            .setColor(BRAND);
-        if (r.imageUrl) e.setThumbnail(r.imageUrl);
-        embeds.push(e);
-    }
+    const shown = roots.slice(0, CATS_PER_PAGE);
 
     const rows = buttonRows(shown, r => new ButtonBuilder()
         .setCustomId(`mc1_${r.key}`)
-        .setLabel(`${r.name} (${r.avail})`.slice(0, 80))
+        .setLabel(`${r.name}`.slice(0, 80))
         .setEmoji(catEmoji(r.name))
         .setStyle(ButtonStyle.Primary), 5);
 
-    return replyOrUpdate(interaction, { content: '', embeds, components: rows });
+    return replyOrUpdate(interaction, {
+        content: '🚀 **MỜI BẠN CHỌN DANH MỤC CẦN MUA:**',
+        embeds: categoryEmbeds(shown),
+        components: rows
+    });
 }
 
 // ═══════════════════════════════════════════════════
@@ -129,46 +136,31 @@ async function showChildren(interaction, parentKey, page = 1) {
         return interaction.update({
             content: '🛠️ Danh mục này hiện đang hết hàng. Vui lòng chọn danh mục khác!',
             embeds: [],
-            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Về Danh Mục' })]
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
         });
     }
 
-    const { items, page: p, totalPages } = paginate(all, page);
+    const { items, page: p, totalPages } = paginate(all, page, CATS_PER_PAGE);
     const parentName = parent ? parent.name : parentKey;
-
-    const embeds = [
-        new EmbedBuilder()
-            .setTitle(`${catEmoji(parentName)} ${parentName}`)
-            .setDescription(
-                `Chọn loại sản phẩm bạn quan tâm 👇` +
-                (totalPages > 1 ? `\n\n📄 Trang **${p}/${totalPages}**` : '')
-            )
-            .setColor(BRAND)
-    ];
-    if (parent?.imageUrl) embeds[0].setThumbnail(parent.imageUrl);
-
-    for (const c of items.slice(0, 9)) {
-        const e = new EmbedBuilder()
-            .setTitle(`${catEmoji(c.name)} ${c.name}`)
-            .setDescription(`📦 Còn \`${c.avail}\` sản phẩm`)
-            .setColor(BRAND);
-        if (c.imageUrl) e.setThumbnail(c.imageUrl);
-        embeds.push(e);
-    }
 
     const rows = buttonRows(items, c => new ButtonBuilder()
         .setCustomId(`mc2_${c.key}`)
-        .setLabel(`${c.name} (${c.avail})`.slice(0, 80))
-        .setStyle(ButtonStyle.Secondary));
+        .setLabel(`${c.name}`.slice(0, 80))
+        .setStyle(ButtonStyle.Primary));
 
     rows.push(navRow({
         backId: 'mroot',
-        backLabel: '⬅️ Về Danh Mục',
+        backLabel: '⬅️ Trở Về',
         prevId: p > 1 ? `mc2p_${parentKey}_${p - 1}` : null,
         nextId: p < totalPages ? `mc2p_${parentKey}_${p + 1}` : null
     }));
 
-    return interaction.update({ content: '', embeds, components: rows });
+    return interaction.update({
+        content: `${catEmoji(parentName)} **${parentName.toUpperCase()}**\n*(Chọn loại sản phẩm bạn quan tâm)*` +
+                 (totalPages > 1 ? `\n📄 Trang **${p}/${totalPages}**` : ''),
+        embeds: categoryEmbeds(items),
+        components: rows
+    });
 }
 
 // ═══════════════════════════════════════════════════
@@ -183,44 +175,38 @@ async function showProducts(interaction, childKey, page = 1) {
         return interaction.update({
             content: '⚠️ Danh mục này vừa hết hàng. Vui lòng chọn mục khác!',
             embeds: [],
-            components: [navRow({ backId, backLabel: '⬅️ Quay lại' })]
+            components: [navRow({ backId, backLabel: '⬅️ Trở Về' })]
         });
     }
 
-    const { items, page: p, totalPages } = paginate(all, page);
+    const { items, page: p, totalPages } = paginate(all, page); // PER_PAGE = 3
     const catName = cat ? cat.name : childKey;
 
-    const embed = new EmbedBuilder()
-        .setTitle(`📦 ${catName}`)
-        .setDescription(
-            `Đang có **${all.length}** sản phẩm. Bấm vào sản phẩm để xem chi tiết & mua 👇` +
-            (totalPages > 1 ? `\n\n📄 Trang **${p}/${totalPages}**` : '')
-        )
-        .setColor(BRAND);
-    if (cat?.imageUrl) embed.setThumbnail(cat.imageUrl);
-
-    for (const pr of items.slice(0, 20)) {
-        embed.addFields({
-            name: pr.name.slice(0, 250),
-            value: `💰 \`${pr.price.toLocaleString('vi-VN')}đ\` • 📦 Còn \`${pr.avail}\``,
-            inline: true
-        });
-    }
+    // Giá và tồn kho liệt kê ngay trong nội dung để khách thấy trước khi bấm
+    const lines = items.map(pr =>
+        `> 🛒 **${pr.name.trim()}** — \`${pr.price.toLocaleString('vi-VN')}đ\` • còn \`${pr.avail}\``
+    ).join('\n');
 
     const rows = buttonRows(items, pr => new ButtonBuilder()
         .setCustomId(`mprod_${pr.id}`)
-        .setLabel(`${pr.name}`.slice(0, 80))
+        .setLabel(`${pr.name.trim()}`.slice(0, 80))
         .setEmoji('🛒')
-        .setStyle(ButtonStyle.Secondary));
+        .setStyle(ButtonStyle.Primary));
 
     rows.push(navRow({
         backId,
-        backLabel: '⬅️ Quay lại',
+        backLabel: '⬅️ Trở Về',
         prevId: p > 1 ? `mprodp_${childKey}_${p - 1}` : null,
         nextId: p < totalPages ? `mprodp_${childKey}_${p + 1}` : null
     }));
 
-    return interaction.update({ content: '', embeds: [embed], components: rows });
+    return interaction.update({
+        content: `📦 **${catName.toUpperCase()}**\n` +
+                 `*(Sản phẩm sẽ được thanh toán qua QR Code tự động)*\n\n${lines}\n\n` +
+                 `📄 Trang **${p}/${totalPages}** — tổng **${all.length}** sản phẩm`,
+        embeds: [],
+        components: rows
+    });
 }
 
 // ═══════════════════════════════════════════════════
@@ -232,7 +218,7 @@ async function showDetail(interaction, productId) {
         return interaction.update({
             content: '⚠️ Sản phẩm này vừa hết hàng hoặc có người khác đang mua. Vui lòng chọn sản phẩm khác!',
             embeds: [],
-            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Về Danh Mục' })]
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Trở Về' })]
         });
     }
 
@@ -261,7 +247,7 @@ async function showDetail(interaction, productId) {
         .setLabel(`Mua ${n} — ${(n * p.price).toLocaleString('vi-VN')}đ`.slice(0, 80))
         .setStyle(ButtonStyle.Success), 4);
 
-    rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Quay lại' }));
+    rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Trở Về' }));
 
     return interaction.update({ content: '', embeds: [embed], components: rows });
 }
@@ -288,7 +274,7 @@ async function createOrderAndShowQR(interaction, productId, quantity) {
             embeds: [],
             components: [navRow({
                 backId: p ? `mc2_${p.webCategory}` : 'mroot',
-                backLabel: '⬅️ Quay lại'
+                backLabel: '⬅️ Trở Về'
             })]
         });
     }
