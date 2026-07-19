@@ -192,12 +192,27 @@ async function showProducts(interaction, childKey, page = 1) {
     const { items, page: p, totalPages } = paginate(all, page); // PER_PAGE = 3
     const catName = cat ? cat.name : childKey;
 
-    // Giá và tồn kho liệt kê ngay trong nội dung để khách thấy trước khi bấm.
-    // Hàng đích danh mỗi dòng là một cái nên không hiện "còn N".
-    const lines = items.map(pr =>
-        `> 🛒 **${pr.name.trim()}** — \`${pr.price.toLocaleString('vi-VN')}đ\`` +
-        (pr.kind === 'stock' ? '' : ` • còn \`${pr.avail}\``)
-    ).join('\n');
+    const isSpecific = cat?.sellMode === 'specific';
+
+    // Danh mục bán đích danh: mỗi món một embed kèm ảnh RIÊNG của nó, để khách nhìn
+    // ảnh mà chọn - đây là điểm phân biệt duy nhất giữa các tài khoản.
+    // Danh mục bán số lượng: chỉ cần liệt kê chữ cho gọn.
+    let lines = '';
+    const embeds = [];
+    if (isSpecific) {
+        for (const pr of items) {
+            const e = new EmbedBuilder()
+                .setTitle(`🛒 ${pr.name.trim()}`)
+                .setDescription(`💰 **Giá:** \`${pr.price.toLocaleString('vi-VN')}đ\``)
+                .setColor(GOLD);
+            if (pr.imageUrl) e.setImage(pr.imageUrl);
+            embeds.push(e);
+        }
+    } else {
+        lines = '\n\n' + items.map(pr =>
+            `> 🛒 **${pr.name.trim()}** — \`${pr.price.toLocaleString('vi-VN')}đ\` • còn \`${pr.avail}\``
+        ).join('\n');
+    }
 
     const rows = buttonRows(items, pr => new ButtonBuilder()
         // 'stock' = một tài khoản cụ thể, 'product' = mặt hàng bán theo số lượng
@@ -215,9 +230,9 @@ async function showProducts(interaction, childKey, page = 1) {
 
     return interaction.update({
         content: `📦 **${catName.toUpperCase()}**\n` +
-                 `*(Sản phẩm sẽ được thanh toán qua QR Code tự động)*\n\n${lines}\n\n` +
+                 `*(Sản phẩm sẽ được thanh toán qua QR Code tự động)*${lines}\n\n` +
                  `📄 Trang **${p}/${totalPages}** — tổng **${all.length}** sản phẩm`,
-        embeds: [],
+        embeds,
         components: rows
     });
 }

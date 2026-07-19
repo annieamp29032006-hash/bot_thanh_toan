@@ -470,6 +470,13 @@ Nếu bán Code: Mã_Code
                     <label>Thứ tự hiện</label>
                     <input type="number" id="cat-new-sort" value="0">
                 </div>
+                <div style="grid-column:2 / 4;">
+                    <label>Kiểu bán <span style="color:#8b949e;font-weight:400;">(chỉ áp dụng cho danh mục cấp 2)</span></label>
+                    <select id="cat-new-mode">
+                        <option value="quantity">📦 Bán theo số lượng — gộp mặt hàng, khách nhập số lượng</option>
+                        <option value="specific">🎯 Bán đích danh — tách từng cái kèm ảnh riêng</option>
+                    </select>
+                </div>
             </div>
             <button id="cat-add-btn" onclick="createCategory()">➕ Tạo danh mục</button>
         </div>
@@ -483,13 +490,14 @@ Nếu bán Code: Mã_Code
                     <th>Danh mục</th>
                     <th style="width:130px;">Mã</th>
                     <th style="width:80px;">Cấp</th>
+                    <th style="width:150px;">Kiểu bán</th>
                     <th style="width:90px;">Mặt hàng</th>
                     <th style="width:70px;">Thứ tự</th>
                     <th style="width:230px;">Thao tác</th>
                 </tr>
             </thead>
             <tbody id="cat-body">
-                <tr><td colspan="7">Đang tải...</td></tr>
+                <tr><td colspan="8">Đang tải...</td></tr>
             </tbody>
         </table>
     </div>
@@ -944,6 +952,11 @@ function catRow(c, isChild) {
         </td>
         <td style="color:#8b949e; font-family:monospace;">${esc(c.key)}</td>
         <td>${isChild ? '<span style="color:#8b949e;">Cấp 2</span>' : '<b style="color:var(--primary);">Cấp 1</b>'}</td>
+        <td>${isChild
+            ? (c.sellMode === 'specific'
+                ? '<span style="color:#ffd700;">🎯 Đích danh</span>'
+                : '<span style="color:#8b949e;">📦 Số lượng</span>')
+            : '<span style="color:#555;">—</span>'}</td>
         <td>${isChild ? c.productCount : `<span style="color:#8b949e;">${c.productCount} (gộp)</span>`}</td>
         <td>${c.sortOrder}</td>
         <td>
@@ -957,7 +970,7 @@ function catRow(c, isChild) {
 function catEditRow(c) {
     return `
     <tr id="edit-${esc(c.key)}" style="background:rgba(0,216,255,0.06);">
-        <td colspan="7">
+        <td colspan="8">
             <div style="display:grid; grid-template-columns:1fr 1fr 100px; gap:12px; align-items:end;">
                 <div>
                     <label style="font-size:13px;">Tên hiển thị</label>
@@ -972,6 +985,14 @@ function catEditRow(c) {
                     <input type="number" id="sort-${esc(c.key)}" value="${c.sortOrder}" style="margin-bottom:0;">
                 </div>
             </div>
+            ${c.parentKey ? `
+            <div style="margin-top:12px;">
+                <label style="font-size:13px;">Kiểu bán</label>
+                <select id="mode-${esc(c.key)}" style="margin-bottom:0;">
+                    <option value="quantity" ${c.sellMode !== 'specific' ? 'selected' : ''}>📦 Bán theo số lượng — gộp mặt hàng, khách nhập số lượng</option>
+                    <option value="specific" ${c.sellMode === 'specific' ? 'selected' : ''}>🎯 Bán đích danh — tách từng cái kèm ảnh riêng</option>
+                </select>
+            </div>` : ''}
             <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 <button class="btn-edit" onclick="saveCategory('${esc(c.key)}')">💾 Lưu</button>
                 <input type="file" id="file-${esc(c.key)}" accept="image/*" style="width:auto; margin-bottom:0; padding:6px;">
@@ -987,21 +1008,21 @@ let EDITING = null;
 
 async function loadCategories() {
     const body = document.getElementById('cat-body');
-    body.innerHTML = '<tr><td colspan="7">Đang tải...</td></tr>';
+    body.innerHTML = '<tr><td colspan="8">Đang tải...</td></tr>';
     try {
         CAT_TREE = await api('/api/categories');
         renderCatTable();
         fillParentSelect();
         if (typeof loadGroupOptions === 'function') loadGroupOptions();
     } catch (e) {
-        body.innerHTML = `<tr><td colspan="7" style="color:#ff4d4d;">Lỗi: ${esc(e.message)}</td></tr>`;
+        body.innerHTML = `<tr><td colspan="8" style="color:#ff4d4d;">Lỗi: ${esc(e.message)}</td></tr>`;
     }
 }
 
 function renderCatTable() {
     const body = document.getElementById('cat-body');
     if (!CAT_TREE.length) {
-        body.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">Chưa có danh mục nào. Hãy tạo ở trên.</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" style="color:#8b949e;">Chưa có danh mục nào. Hãy tạo ở trên.</td></tr>';
         return;
     }
     let html = '';
@@ -1013,7 +1034,7 @@ function renderCatTable() {
             if (EDITING === child.key) html += catEditRow(child);
         }
         if (!(root.children || []).length) {
-            html += `<tr><td></td><td colspan="6" style="color:#8b949e; font-style:italic; padding-left:26px;">
+            html += `<tr><td></td><td colspan="7" style="color:#8b949e; font-style:italic; padding-left:26px;">
                      └─ chưa có danh mục cấp 2 — mặt hàng không gắn được vào đây</td></tr>`;
         }
     }
@@ -1052,7 +1073,8 @@ async function createCategory() {
                 key: document.getElementById('cat-new-key').value.trim(),
                 name: document.getElementById('cat-new-name').value.trim(),
                 imageUrl: document.getElementById('cat-new-img').value.trim(),
-                sortOrder: document.getElementById('cat-new-sort').value
+                sortOrder: document.getElementById('cat-new-sort').value,
+                sellMode: document.getElementById('cat-new-mode').value
             })
         });
         catMsg('✅ ' + d.message, true);
@@ -1070,7 +1092,9 @@ async function saveCategory(key) {
             body: JSON.stringify({
                 name: document.getElementById('name-' + key).value.trim(),
                 imageUrl: document.getElementById('url-' + key).value.trim(),
-                sortOrder: document.getElementById('sort-' + key).value
+                sortOrder: document.getElementById('sort-' + key).value,
+                ...(document.getElementById('mode-' + key)
+                    ? { sellMode: document.getElementById('mode-' + key).value } : {})
             })
         });
         catMsg('✅ ' + d.message, true);

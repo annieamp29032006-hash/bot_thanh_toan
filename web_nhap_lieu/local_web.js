@@ -422,6 +422,7 @@ app.get('/api/categories', async (req, res) => {
             key: c.key, name: c.name, parentKey: c.parentKey || null,
             level: c.parentKey ? 2 : 1,
             description: c.description || '', imageUrl: c.imageUrl || '',
+            sellMode: c.sellMode || 'quantity',
             sortOrder: c.sortOrder, isActive: c.isActive,
             productCount: map.get(c.key) || 0
         });
@@ -448,7 +449,7 @@ app.get('/api/categories', async (req, res) => {
 
 app.post('/api/categories', async (req, res) => {
     try {
-        const { key, name, description, imageUrl, sortOrder, parentKey } = req.body;
+        const { key, name, description, imageUrl, sortOrder, parentKey, sellMode } = req.body;
         if (!key || !name) return res.status(400).json({ error: 'Thiếu mã hoặc tên danh mục' });
 
         // key đi vào customId của nút Discord (mc1_<key>) nên phải sạch và ngắn
@@ -472,6 +473,7 @@ app.post('/api/categories', async (req, res) => {
 
         const cat = await Category.create({
             key: cleanKey, name, parentKey: parentKey || null,
+            sellMode: sellMode === 'specific' ? 'specific' : 'quantity',
             description: description || '',
             imageUrl: imageUrl || '', sortOrder: Number(sortOrder) || 0
         });
@@ -514,12 +516,13 @@ app.delete('/api/categories/:key', async (req, res) => {
 
 app.put('/api/categories/:key', async (req, res) => {
     try {
-        const { name, description, imageUrl, sortOrder, isActive } = req.body;
+        const { name, description, imageUrl, sortOrder, isActive, sellMode } = req.body;
         const update = {};
         if (name !== undefined) update.name = name;
         if (description !== undefined) update.description = description;
         if (imageUrl !== undefined) update.imageUrl = imageUrl;   // chỉ là link
         if (sortOrder !== undefined) update.sortOrder = Number(sortOrder);
+        if (sellMode !== undefined) update.sellMode = sellMode === 'specific' ? 'specific' : 'quantity';
         if (isActive !== undefined) update.isActive = !!isActive;
 
         const cat = await Category.findOneAndUpdate(

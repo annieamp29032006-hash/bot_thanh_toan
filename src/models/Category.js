@@ -14,6 +14,16 @@ const categorySchema = new mongoose.Schema({
     name: { type: String, required: true },
     // null = danh mục gốc (cấp 1). Có giá trị = danh mục con (cấp 2).
     parentKey: { type: String, default: null, index: true },
+    /**
+     * Cách bày hàng của danh mục này (chỉ có ý nghĩa với danh mục CẤP 2):
+     *   'quantity' - bán theo số lượng: gộp mỗi mặt hàng một dòng, khách nhập số lượng.
+     *   'specific' - bán đích danh: tách từng cái trong kho thành một dòng riêng kèm
+     *                ảnh của chính nó, khách chọn đúng cái muốn mua.
+     *
+     * Đặt ở danh mục thay vì ở từng sản phẩm: cả một gian hàng thường bán cùng một
+     * kiểu, cấu hình một lần đỡ phải nhớ đặt lại cho mỗi mặt hàng mới.
+     */
+    sellMode: { type: String, enum: ['quantity', 'specific'], default: 'quantity' },
     description: { type: String, default: '' },
     imageUrl: { type: String, default: '' },   // CHỈ lưu link, không lưu file
     sortOrder: { type: Number, default: 0 },

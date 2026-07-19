@@ -90,13 +90,15 @@ async function getChildCategories(parentKey) {
 /**
  * Danh sách mặt hàng bày ra trong một danh mục (màn thứ ba).
  *
- * Hai kiểu bày khác nhau:
- *   - 'code' (bán số lượng): gộp thành MỘT dòng, khách chọn số lượng.
- *   - 'account'/'vip' (bán đích danh): TÁCH RA từng cái, vì mỗi tài khoản là một
- *     món khác nhau (ảnh riêng, thông tin riêng). Gộp lại thành "còn 3" là sai
- *     bản chất - khách không biết mình mua cái nào.
+ * Cách bày do CHÍNH DANH MỤC quyết định (Category.sellMode), không phải loại sản phẩm:
+ *   - 'quantity': gộp mỗi mặt hàng thành MỘT dòng, khách nhập số lượng.
+ *   - 'specific': TÁCH từng cái trong kho thành dòng riêng kèm ảnh của nó. Gộp lại
+ *     thành "còn 3" là sai bản chất - khách không biết mình đang mua cái nào.
  */
 async function getProducts(childKey) {
+    const cat = await Category.findOne({ key: childKey }).lean();
+    const specific = cat?.sellMode === 'specific';
+
     const products = await Product.find({ isActive: true, webCategory: childKey })
         .sort({ price: 1, name: 1 }).lean();
     if (!products.length) return [];
@@ -108,7 +110,7 @@ async function getProducts(childKey) {
         const avail = availMap.get(String(p._id)) || 0;
         if (!avail) continue;
 
-        if (p.type === 'code') {
+        if (!specific) {
             out.push({
                 kind: 'product',
                 id: String(p._id),
@@ -208,6 +210,7 @@ async function getCategory(key) {
     if (!c) return null;
     return {
         key: c.key, name: c.name, parentKey: c.parentKey,
+        sellMode: c.sellMode || 'quantity',
         imageUrl: c.imageUrl || '', description: c.description || ''
     };
 }
