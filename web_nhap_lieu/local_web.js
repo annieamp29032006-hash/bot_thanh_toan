@@ -7,6 +7,8 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
 
 // MongoDB Models
 const Product = require('./src/models/Product');
@@ -17,12 +19,114 @@ const Category = require('./src/models/Category');
 const app = express();
 const port = 3000;
 
-app.use(cors());
-app.use(express.static('public'));
+// CORS chỉ cho chính domain này. Trước đây mở cho mọi origin, nghĩa là bất kỳ
+// trang web nào cũng gọi được API quản trị bằng phiên đăng nhập của bạn.
+app.use(cors({ origin: false, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 const upload = multer({ dest: 'uploads/' });
+
+// ═══════════════════════════════════════════════════
+// ĐĂNG NHẬP
+// Phiên ký bằng HMAC trong cookie httpOnly - không cần store, restart vẫn còn hiệu lực.
+// ═══════════════════════════════════════════════════
+const SESSION_SECRET = process.env.SESSION_SECRET || '';
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS_HASH = process.env.ADMIN_PASS_HASH || ''; // sha256 của mật khẩu
+const SESSION_HOURS = 12;
+const COOKIE = 'kaiz_session';
+
+if (!SESSION_SECRET || !ADMIN_PASS_HASH) {
+    console.error('❌ Thiếu SESSION_SECRET hoặc ADMIN_PASS_HASH trong .env - từ chối khởi động.');
+    process.exit(1);
+}
+
+const sha256 = v => crypto.createHash('sha256').update(String(v)).digest('hex');
+
+function signSession(payload) {
+    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const sig = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+    return `${body}.${sig}`;
+}
+
+function verifySession(token) {
+    if (!token || !token.includes('.')) return null;
+    const [body, sig] = token.split('.');
+    const expect = crypto.createHmac('sha256', SESSION_SECRET).update(body).digest('base64url');
+    // timingSafeEqual để so sánh chữ ký không bị đoán qua thời gian phản hồi
+    const a = Buffer.from(sig || ''), b = Buffer.from(expect);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    try {
+        const data = JSON.parse(Buffer.from(body, 'base64url').toString());
+        if (!data.exp || Date.now() > data.exp) return null;
+        return data;
+    } catch { return null; }
+}
+
+// Chặn dò mật khẩu: quá 8 lần sai trong 15 phút thì khoá theo IP
+const failed = new Map();
+function tooManyAttempts(ip) {
+    const rec = failed.get(ip);
+    if (!rec) return false;
+    if (Date.now() - rec.first > 15 * 60 * 1000) { failed.delete(ip); return false; }
+    return rec.count >= 8;
+}
+function noteFailure(ip) {
+    const rec = failed.get(ip);
+    if (!rec || Date.now() - rec.first > 15 * 60 * 1000) failed.set(ip, { count: 1, first: Date.now() });
+    else rec.count++;
+}
+
+function requireAuth(req, res, next) {
+    if (verifySession(req.cookies[COOKIE])) return next();
+    // API trả JSON để frontend biết mà chuyển về trang đăng nhập
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Chưa đăng nhập' });
+    return res.redirect('/login');
+}
+
+app.get('/login', (req, res) => {
+    if (verifySession(req.cookies[COOKIE])) return res.redirect('/');
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.post('/api/login', (req, res) => {
+    const ip = req.ip || 'unknown';
+    if (tooManyAttempts(ip)) {
+        return res.status(429).json({ error: 'Sai quá nhiều lần. Vui lòng thử lại sau 15 phút.' });
+    }
+    const { username, password } = req.body || {};
+    const okUser = String(username || '') === ADMIN_USER;
+    const okPass = sha256(password || '') === ADMIN_PASS_HASH;
+    if (!okUser || !okPass) {
+        noteFailure(ip);
+        return res.status(401).json({ error: 'Sai tài khoản hoặc mật khẩu' });
+    }
+    failed.delete(ip);
+    const token = signSession({ u: ADMIN_USER, exp: Date.now() + SESSION_HOURS * 3600 * 1000 });
+    res.cookie(COOKIE, token, {
+        httpOnly: true,                             // JS của trang không đọc được -> chống XSS lấy phiên
+        secure: true,                               // chỉ gửi qua HTTPS
+        sameSite: 'lax',                            // chống CSRF cơ bản
+        maxAge: SESSION_HOURS * 3600 * 1000
+    });
+    res.json({ success: true });
+});
+
+app.post('/api/logout', (req, res) => {
+    res.clearCookie(COOKIE);
+    res.json({ success: true });
+});
+
+app.get('/api/me', requireAuth, (req, res) => {
+    res.json({ user: verifySession(req.cookies[COOKIE]).u });
+});
+
+// TỪ ĐÂY TRỞ XUỐNG BẮT BUỘC ĐĂNG NHẬP.
+// Đặt trước express.static để index.html (bảng quản trị) cũng được bảo vệ.
+app.use(requireAuth);
+app.use(express.static('public'));
 
 // Kết nối MongoDB thay vì MySQL
 mongoose.connect(process.env.MONGO_URI)
@@ -243,15 +347,22 @@ app.delete('/api/inventory/:id', async (req, res) => {
 // API QUẢN LÝ MẶT HÀNG (Ánh xạ MongoDB Product sang category format cho frontend)
 app.get('/api/groups', async (req, res) => {
     try {
-        const products = await Product.find({ isActive: true });
-        
-        let data = {
-            acc_pc: products.filter(p => p.webCategory === 'acc_pc').map(p => ({ id: p._id.toString(), name: p.name, type: p.type })),
-            gcoin: products.filter(p => p.webCategory === 'gcoin').map(p => ({ id: p._id.toString(), name: p.name, type: p.type })),
-            steam: products.filter(p => p.webCategory === 'steam').map(p => ({ id: p._id.toString(), name: p.name, type: p.type })),
-            outfit: products.filter(p => p.webCategory === 'outfit').map(p => ({ id: p._id.toString(), name: p.name, type: p.type }))
-        };
-        
+        // Dựng theo danh mục ĐỘNG trong DB, không hardcode 4 cái cũ - nếu hardcode thì
+        // mặt hàng thuộc danh mục mới tạo sẽ vô hình ở tab Quản Lý Mặt Hàng.
+        const [products, cats] = await Promise.all([
+            Product.find({ isActive: true }).lean(),
+            Category.find().sort({ sortOrder: 1 }).lean()
+        ]);
+
+        const data = {};
+        for (const c of cats) data[c.key] = [];
+
+        for (const p of products) {
+            const k = p.webCategory || 'khac';
+            if (!data[k]) data[k] = []; // sản phẩm trỏ vào danh mục đã bị xoá -> vẫn hiện để còn dọn
+            data[k].push({ id: p._id.toString(), name: p.name, type: p.type });
+        }
+
         res.json(data);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -305,6 +416,49 @@ app.get('/api/categories', async (req, res) => {
             imageUrl: c.imageUrl || '', sortOrder: c.sortOrder, isActive: c.isActive,
             productCount: map.get(c.key) || 0
         })));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/categories', async (req, res) => {
+    try {
+        const { key, name, description, imageUrl, sortOrder } = req.body;
+        if (!key || !name) return res.status(400).json({ error: 'Thiếu mã hoặc tên danh mục' });
+
+        // key đi vào customId của nút Discord (mcat_<key>) nên phải sạch và ngắn
+        const cleanKey = String(key).trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+        if (!cleanKey) return res.status(400).json({ error: 'Mã chỉ được dùng chữ thường, số và dấu _' });
+        if (cleanKey.length > 32) return res.status(400).json({ error: 'Mã tối đa 32 ký tự' });
+
+        if (await Category.findOne({ key: cleanKey })) {
+            return res.status(409).json({ error: `Mã "${cleanKey}" đã tồn tại` });
+        }
+
+        const cat = await Category.create({
+            key: cleanKey, name, description: description || '',
+            imageUrl: imageUrl || '', sortOrder: Number(sortOrder) || 0
+        });
+        res.json({ success: true, message: `Đã tạo danh mục "${name}"`, data: cat });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/categories/:key', async (req, res) => {
+    try {
+        const key = req.params.key;
+        const cat = await Category.findOne({ key });
+        if (!cat) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
+
+        // CỐ Ý không xoá theo kiểu dây chuyền: xoá danh mục mà cuốn theo sản phẩm và
+        // kho hàng là mất dữ liệu bán được. Bắt người dùng dọn hoặc chuyển sản phẩm trước.
+        const n = await Product.countDocuments({ webCategory: key });
+        if (n > 0) {
+            return res.status(409).json({
+                error: `Danh mục còn ${n} mặt hàng. Hãy chuyển hoặc xoá số mặt hàng đó trước, ` +
+                       `hoặc tắt hiển thị danh mục thay vì xoá.`
+            });
+        }
+
+        await Category.deleteOne({ key });
+        res.json({ success: true, message: `Đã xoá danh mục "${cat.name}"` });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

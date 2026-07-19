@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập — Kaiz Store Admin</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+
+        :root {
+            --primary: #00D8FF;
+            --secondary: #00ff88;
+            --danger: #ff4d4d;
+            --glass-bg: rgba(22, 27, 34, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #c9d1d9;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #0d1117, #161b22, #0d1117);
+            background-attachment: fixed;
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            padding: 40px 36px;
+            width: 100%;
+            max-width: 400px;
+            animation: fadeIn 0.4s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        h1 {
+            margin: 0 0 6px;
+            text-align: center;
+            color: #fff;
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-shadow: 0 0 10px rgba(0, 216, 255, 0.3);
+        }
+        h1 span { color: var(--primary); }
+        .sub {
+            text-align: center;
+            color: #8b949e;
+            font-size: 14px;
+            margin-bottom: 28px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #e6edf3;
+            font-size: 14.5px;
+        }
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 18px;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.25);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 216, 255, 0.15);
+            background: rgba(0, 0, 0, 0.4);
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 216, 255, 0.3);
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 216, 255, 0.5);
+        }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        #msg {
+            margin-top: 16px;
+            text-align: center;
+            font-size: 14px;
+            min-height: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>KAIZ <span>STORE</span></h1>
+        <div class="sub">Khu vực quản trị — vui lòng đăng nhập</div>
+
+        <form id="loginForm" autocomplete="on">
+            <label for="username">Tài khoản</label>
+            <input type="text" id="username" name="username" required autofocus autocomplete="username">
+
+            <label for="password">Mật khẩu</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password">
+
+            <button type="submit" id="btn">Đăng nhập</button>
+        </form>
+        <div id="msg"></div>
+    </div>
+
+<script>
+const form = document.getElementById('loginForm');
+const btn = document.getElementById('btn');
+const msg = document.getElementById('msg');
+
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    msg.style.color = '#8b949e';
+    msg.textContent = 'Đang kiểm tra...';
+    try {
+        const r = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Đăng nhập thất bại');
+        msg.style.color = '#00ff88';
+        msg.textContent = '✅ Thành công, đang chuyển...';
+        location.href = '/';
+    } catch (err) {
+        msg.style.color = '#ff4d4d';
+        msg.textContent = '❌ ' + err.message;
+        document.getElementById('password').value = '';
+        btn.disabled = false;
+    }
+});
+</script>
+</body>
+</html>
