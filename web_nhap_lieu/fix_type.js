@@ -1,0 +1,1 @@
+const mongoose = require('mongoose'); mongoose.connect('mongodb://127.0.0.1:27017/lavie_shop').then(async () => { const Product = require('./src/models/Product'); await Product.updateMany({ name: { $in: ['?? Acc PUBG Giá Ch? Ðen', '?? Acc PUBG Súng + Vé Ch? Ðen'] } }, { $set: { type: 'code' } }); console.log('Done!'); process.exit(0); });

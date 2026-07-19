@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kaiz Store - Admin Panel</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+
+        :root {
+            --primary: #00D8FF;
+            --secondary: #00ff88;
+            --danger: #ff4d4d;
+            --bg-gradient: linear-gradient(135deg, #0d1117, #161b22, #0d1117);
+            --glass-bg: rgba(22, 27, 34, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #c9d1d9;
+            --text-heading: #ffffff;
+        }
+
+        body {
+            background: var(--bg-gradient);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background-attachment: fixed;
+        }
+        
+        /* Header & Tabs */
+        .header {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .header h1 {
+            margin: 0;
+            color: var(--text-heading);
+            font-size: 26px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-shadow: 0 0 10px rgba(0, 216, 255, 0.3);
+        }
+        .header h1 span {
+            color: var(--primary);
+        }
+        .tab-menu {
+            display: flex;
+            gap: 12px;
+        }
+        .tab-btn {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            border: 1px solid var(--glass-border);
+            padding: 10px 22px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+        .tab-btn.active {
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(0, 216, 255, 0.4);
+        }
+        
+        /* Main Content */
+        .content {
+            padding: 40px 20px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        .tab-pane {
+            display: none;
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            padding: 35px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.4s ease-out;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        h2 {
+            text-align: center;
+            color: var(--secondary);
+            margin-top: 0;
+            margin-bottom: 25px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+        }
+
+        /* Form Styles */
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #e6edf3;
+            font-size: 14.5px;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 20px;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.2);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            font-size: 14px;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+        textarea {
+            resize: vertical;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 216, 255, 0.15);
+            background: rgba(0, 0, 0, 0.4);
+        }
+        button[type="submit"], #submitBtn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, var(--primary), var(--secondary));
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 216, 255, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button[type="submit"]:hover, #submitBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 216, 255, 0.5);
+        }
+        button[type="submit"]:active, #submitBtn:active {
+            transform: translateY(1px);
+        }
+        
+        /* Dashboard Stats */
+        .stats-grid {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 35px;
+            gap: 20px;
+        }
+        .stat-box {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            padding: 25px 20px;
+            border-radius: 12px;
+            text-align: center;
+            flex: 1;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat-box::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+        .stat-box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .stat-box h3 { margin: 0; color: #8b949e; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-box p { margin: 15px 0 0; font-size: 28px; font-weight: 700; color: #fff; text-shadow: 0 0 10px rgba(255, 255, 255, 0.2); }
+        
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--glass-border);
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        th { 
+            background: rgba(255, 255, 255, 0.03); 
+            color: var(--primary); 
+            font-weight: 600; 
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255, 255, 255, 0.03); }
+        
+        .btn-delete {
+            background-color: rgba(255, 77, 77, 0.15);
+            color: var(--danger);
+            border: 1px solid rgba(255, 77, 77, 0.3);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-delete:hover {
+            background-color: var(--danger);
+            color: #fff;
+        }
+        .btn-edit {
+            background-color: rgba(0, 216, 255, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(0, 216, 255, 0.3);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-right: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-edit:hover {
+            background-color: var(--primary);
+            color: #000;
+        }
+        button[onclick="loadInventory()"] {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid var(--glass-border);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        button[onclick="loadInventory()"]:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .message {
+            margin-top: 20px;
+            text-align: center;
+            font-weight: 600;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+            backdrop-filter: blur(5px);
+            animation: fadeIn 0.3s ease;
+        }
+        .success { 
+            background-color: rgba(0, 255, 136, 0.1); 
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            color: var(--secondary); 
+        }
+        .error { 
+            background-color: rgba(255, 77, 77, 0.1); 
+            border: 1px solid rgba(255, 77, 77, 0.3);
+            color: var(--danger); 
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0d1117; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>👑 Kaiz Store Admin</h1>
+    <div class="tab-menu">
+        <button class="tab-btn active" onclick="openTab('tab-upload', this)">📦 Đăng Sản Phẩm</button>
+        <button class="tab-btn" onclick="openTab('tab-dashboard', this)">📊 Thống Kê</button>
+        <button class="tab-btn" onclick="openTab('tab-groups', this)">📂 Quản Lý Mặt Hàng</button>
+        <button class="tab-btn" onclick="openTab('tab-inventory', this)">📋 Quản Lý Tồn Kho</button>
+    </div>
+</div>
+
+<div class="content">
+
+    <!-- TAB: ĐĂNG SẢN PHẨM -->
+    <div id="tab-upload" class="tab-pane active">
+        <h2>📦 Đăng Sản Phẩm Mới</h2>
+        <form id="uploadForm">
+            <label for="group_id">Danh Mục Bán Hàng:</label>
+            <select id="group_id" name="group_id" required>
+                <option value="">-- Đang tải danh mục... --</option>
+            </select>
+
+            <label for="batch_data">
+                Thông Tin Tài Khoản / Mã Code (Nhập mỗi sản phẩm 1 dòng): 
+                <span style="font-weight:normal; font-size:13px; margin-left:10px; color:#00ff88; cursor:pointer; text-decoration:underline;" onclick="document.getElementById('txtFile').click()">[📁 Tải lên từ file .txt]</span>
+            </label>
+            <input type="file" id="txtFile" accept=".txt" style="display:none;" onchange="loadTxtFile(event)">
+            <textarea id="batch_data" name="batch_data" rows="8" placeholder="Cách nhập:
+Nếu bán Acc: Tên_Đăng_Nhập | Mật_Khẩu | Email | Mô_tả_riêng
+(Ví dụ: user1 | pass123 | mail@... | Acc VIP có M4A1)
+
+Nếu bán Code: Mã_Code
+(Ví dụ: CODE_ABC_123)" required></textarea>
+            
+            <label for="description">Mô Tả Chung (Dùng cho tất cả, nếu bỏ trống Mô_tả_riêng):</label>
+            <input type="text" id="description" name="description" placeholder="Ví dụ: Súng AUG mạ vàng, rank Cao Thủ...">
+
+            <label for="price">Giá Tiền (VNĐ):</label>
+            <input type="number" id="price" name="price" placeholder="Ví dụ: 100000" required>
+
+            <label for="images">Hình Ảnh Mô Tả (Chọn 1 hoặc nhiều ảnh):</label>
+            <p style="font-size:12px; color:#ffcc00; margin-top:-5px;">* Nếu tải nhiều ảnh cho nhiều nick, vui lòng đặt tên file là 1.jpg, 2.jpg... để hệ thống ráp đúng thứ tự Dòng 1, Dòng 2.</p>
+            <input type="file" id="images" name="images" accept="image/*" multiple required>
+
+            <button type="submit" id="submitBtn">ĐẨY LÊN HỆ THỐNG</button>
+        </form>
+        <div id="uploadMsg" class="message"></div>
+    </div>
+
+    <!-- TAB: THỐNG KÊ DOANH THU -->
+    <div id="tab-dashboard" class="tab-pane">
+        <h2>📊 Thống Kê Doanh Thu & Đơn Hàng</h2>
+        <div class="stats-grid">
+            <div class="stat-box">
+                <h3>DOANH THU HÔM NAY</h3>
+                <p id="today-rev">0 đ</p>
+            </div>
+            <div class="stat-box">
+                <h3>DOANH THU THÁNG NÀY</h3>
+                <p id="month-rev">0 đ</p>
+            </div>
+            <div class="stat-box">
+                <h3>TỔNG DOANH THU</h3>
+                <p id="all-rev">0 đ</p>
+            </div>
+        </div>
+        
+        <h3 style="color: #00D8FF;">🛒 20 Giao Dịch Gần Nhất (Live)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Mã Đơn</th>
+                    <th>Khách Hàng</th>
+                    <th>Sản Phẩm</th>
+                    <th>SL</th>
+                    <th>Số Tiền</th>
+                    <th>Thời Gian</th>
+                </tr>
+            </thead>
+            <tbody id="orders-body">
+                <tr><td colspan="6" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB: QUẢN LÝ MẶT HÀNG -->
+    <div id="tab-groups" class="tab-pane">
+        <h2>📂 Quản Lý Danh Mục Mặt Hàng</h2>
+        <p style="color: #aaa; text-align: center; margin-bottom: 20px;">
+            Thêm hoặc Xóa các mặt hàng hiển thị trên Shop. Thay đổi sẽ có tác dụng ngay lập tức cho cả Website và Bot Discord!
+        </p>
+        
+        <div style="background: #2b2b2b; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+            <h3 style="color: #00ff88; margin-top: 0;">➕ Thêm Mặt Hàng Mới</h3>
+            <form id="addGroupForm">
+                <label>Thuộc Danh Mục Mẹ:</label>
+                <select id="newCat" required>
+                    <option value="acc_pc">🎮 ACCOUNT PC (Bán Acc)</option>
+                    <option value="gcoin">💎 CODE GCOIN (Bán Code Số lượng)</option>
+                    <option value="steam">💳 STEAM WALLET (Bán Code Số lượng)</option>
+                    <option value="outfit">👕 TRANG PHỤC (Bán Code Số lượng)</option>
+                </select>
+                
+                <label>Tên Mặt Hàng:</label>
+                <input type="text" id="newName" placeholder="VD: Gcoin 20000, Acc VIP..." required>
+                
+                <label>Kiểu Bán (Phân loại lúc đăng sản phẩm):</label>
+                <select id="newType" required>
+                    <option value="code">Bán số lượng (Code chung / nhiều mã cùng lúc)</option>
+                    <option value="account">Bán từng cái 1 (Acc/Tài khoản đích danh)</option>
+                </select>
+                
+                <button type="submit" id="addBtn">Lưu Mặt Hàng</button>
+            </form>
+            <div id="addMsg" class="message"></div>
+        </div>
+        
+        <h3 style="color: #00D8FF;">📋 Danh Sách Hiện Tại</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Tên Mặt Hàng</th>
+                    <th>Danh Mục Mẹ</th>
+                    <th>Kiểu Bán</th>
+                    <th>Hành Động</th>
+                </tr>
+            </thead>
+            <tbody id="groups-body">
+                <tr><td colspan="5" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB: QUẢN LÝ TỒN KHO -->
+    <div id="tab-inventory" class="tab-pane">
+        <h2>📋 Quản Lý Tồn Kho (Chi Tiết)</h2>
+        <div style="margin-bottom: 20px;">
+            <label style="display:inline-block; width: auto; margin-right: 10px;">Lọc theo danh mục:</label>
+            <select id="inv-group-filter" style="width: 300px; display:inline-block;" onchange="loadInventory()">
+                <option value="">-- Tất cả mặt hàng --</option>
+            </select>
+            <button onclick="loadInventory()" style="width: auto; padding: 10px 15px; margin-left: 10px;">Làm mới</button>
+            
+            <label style="display:inline-block; width: auto; margin-left: 20px; margin-right: 10px;">Tìm Mã Đơn:</label>
+            <input type="text" id="inv-search-code" placeholder="Nhập mã đơn KZ hoặc Code SP..." onkeyup="filterInventoryByCode()" style="width: 250px; display:inline-block; padding: 10px;">
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>STT / ID</th>
+                    <th>Code (Mã SP)</th>
+                    <th>Nội dung (TK/MK/Mail)</th>
+                    <th>Mã Đơn (KZ)</th>
+                    <th>Ngày Nhập</th>
+                    <th>Ngày Bán</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="inventory-body">
+                <tr><td colspan="8" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+    // Xử lý chuyển Tab
+    function openTab(tabId, btn) {
+        document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+        
+        if(tabId === 'tab-dashboard') loadStats();
+        if(tabId === 'tab-upload' || tabId === 'tab-groups') loadGroups();
+        if(tabId === 'tab-inventory') { loadGroupsForFilter(); loadInventory(); }
+    }
+
+    // Xử lý đọc file TXT vào textarea
+    function loadTxtFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const text = e.target.result;
+            const textarea = document.getElementById('batch_data');
+            if (textarea.value.trim() !== '') {
+                textarea.value += '\n' + text;
+            } else {
+                textarea.value = text;
+            }
+            // Reset input để có thể tải lại cùng 1 file
+            event.target.value = ''; 
+        };
+        reader.readAsText(file);
+    }
+
+    // Xử lý tải API Groups
+    const catNames = {
+        "acc_pc": "🎮 ACCOUNT PC",
+        "gcoin": "💎 CODE GCOIN",
+        "steam": "💳 STEAM WALLET",
+        "outfit": "👕 TRANG PHỤC"
+    };
+
+    async function loadGroups() {
+        try {
+            const res = await fetch('/api/groups');
+            const data = await res.json();
+            
+            // 1. Cập nhật Select box trong form Upload
+            const select = document.getElementById('group_id');
+            select.innerHTML = '<option value="">-- Chọn danh mục sản phẩm --</option>';
+            
+            for (let cat in data) {
+                if(data[cat].length > 0) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = catNames[cat] || cat;
+                    data[cat].forEach(g => {
+                        const opt = document.createElement('option');
+                        opt.value = g.id;
+                        opt.textContent = g.name;
+                        optgroup.appendChild(opt);
+                    });
+                    select.appendChild(optgroup);
+                }
+            }
+            
+            // 2. Cập nhật Bảng Quản lý Danh mục
+            const tbody = document.getElementById('groups-body');
+            tbody.innerHTML = '';
+            let hasData = false;
+            
+            for (let cat in data) {
+                data[cat].forEach(g => {
+                    hasData = true;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="color:#aaa;">${g.id}</td>
+                        <td style="font-weight: bold;">${g.name}</td>
+                        <td>${catNames[cat] || cat}</td>
+                        <td>${g.type === 'account' ? 'Bán đích danh' : 'Bán số lượng'}</td>
+                        <td>
+                            <button class="btn-edit" onclick="editGroup('${cat}', '${g.id}', '${g.name}')">Sửa</button>
+                            <button class="btn-delete" onclick="deleteGroup('${cat}', '${g.id}')">Xóa</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            if(!hasData) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Chưa có mặt hàng nào.</td></tr>';
+            
+        } catch(e) {
+            console.error("Lỗi tải groups", e);
+        }
+    }
+
+    // Xử lý Thêm/Xóa Group
+    document.getElementById('addGroupForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const cat = document.getElementById('newCat').value;
+        const name = document.getElementById('newName').value;
+        const type = document.getElementById('newType').value;
+        const msgDiv = document.getElementById('addMsg');
+        
+        try {
+            const res = await fetch('/api/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: cat, name: name, type: type })
+            });
+            const result = await res.json();
+            if(result.success) {
+                document.getElementById('newName').value = '';
+                msgDiv.style.display = 'block';
+                msgDiv.className = 'message success';
+                msgDiv.textContent = '✅ Đã thêm mặt hàng thành công!';
+                loadGroups();
+                setTimeout(() => msgDiv.style.display = 'none', 3000);
+            }
+        } catch(e) {
+            alert('Lỗi thêm dữ liệu');
+        }
+    });
+
+    // Sửa danh mục mặt hàng
+    async function editGroup(category, id, oldName) {
+        const newName = prompt(`Nhập tên mới cho mặt hàng:\n(Đang là: ${oldName})`, oldName);
+        if(!newName || newName === oldName) return;
+        
+        try {
+            const res = await fetch(`/api/groups/${category}/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName })
+            });
+            const result = await res.json();
+            if(result.success) loadGroups();
+            else alert('Lỗi sửa mặt hàng: ' + result.error);
+        } catch(e) {
+            alert('Lỗi kết nối.');
+        }
+    }
+
+    // Xóa danh mục mặt hàng
+    async function deleteGroup(category, id) {
+        if(!confirm('Bạn có chắc chắn muốn xóa danh mục này? Hệ thống sẽ mất thông tin hiển thị của nó trên Web và Discord!')) return;
+        try {
+            const res = await fetch(`/api/groups/${category}/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if(result.success) loadGroups();
+        } catch(e) {
+            alert('Lỗi khi xóa mặt hàng');
+        }
+    }
+
+
+    // Xử lý Upload Sản phẩm
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('submitBtn');
+        const msgDiv = document.getElementById('uploadMsg');
+        
+        btn.textContent = 'ĐANG TẢI LÊN...';
+        btn.disabled = true;
+        msgDiv.style.display = 'none';
+        
+        const formData = new FormData(this);
+        
+        try {
+            const response = await fetch('/api/upload', { method: 'POST', body: formData });
+            const result = await response.json();
+            
+            msgDiv.style.display = 'block';
+            if (result.success) {
+                msgDiv.className = 'message success';
+                msgDiv.innerHTML = `✅ ${result.message}<br>Tổng cộng: ${result.data.count} SP`;
+                this.reset();
+            } else {
+                msgDiv.className = 'message error';
+                msgDiv.innerHTML = `❌ Lỗi: ${result.message}`;
+            }
+        } catch (error) {
+            msgDiv.style.display = 'block';
+            msgDiv.className = 'message error';
+            msgDiv.innerHTML = `❌ Không thể kết nối tới Server.`;
+        } finally {
+            btn.textContent = 'ĐẨY LÊN HỆ THỐNG';
+            btn.disabled = false;
+        }
+    });
+
+    // Xử lý Dashboard
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/stats');
+            const result = await res.json();
+            if (result.success) {
+                const data = result.data;
+                document.getElementById('today-rev').innerText = data.today.toLocaleString('vi-VN') + ' đ';
+                document.getElementById('month-rev').innerText = data.month.toLocaleString('vi-VN') + ' đ';
+                document.getElementById('all-rev').innerText = data.all.toLocaleString('vi-VN') + ' đ';
+                
+                const tbody = document.getElementById('orders-body');
+                tbody.innerHTML = '';
+                if (data.recentOrders.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Chưa có giao dịch nào</td></tr>';
+                } else {
+                    data.recentOrders.forEach(order => {
+                        const tr = document.createElement('tr');
+                        const time = new Date(order.created_at).toLocaleString('vi-VN');
+                        tr.innerHTML = `
+                            <td>${order.order_code}</td>
+                            <td style="color: #ff007f; font-weight: bold;">${order.discord_tag}</td>
+                            <td>${order.product_type}</td>
+                            <td>${order.qty}</td>
+                            <td style="color: #00ff88; font-weight: bold;">${Number(order.amount).toLocaleString('vi-VN')} đ</td>
+                            <td>${time}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Lỗi lấy dữ liệu", e);
+        }
+    }
+
+    // Xử lý Tồn Kho
+    async function loadGroupsForFilter() {
+        try {
+            const res = await fetch('/api/groups');
+            const data = await res.json();
+            const select = document.getElementById('inv-group-filter');
+            select.innerHTML = '<option value="">-- Tất cả mặt hàng --</option>';
+            for (let cat in data) {
+                if(data[cat].length > 0) {
+                    const optgroup = document.createElement('optgroup');
+                    optgroup.label = catNames[cat] || cat;
+                    data[cat].forEach(g => {
+                        if (g.type === 'folder' && g.subgroups) {
+                            g.subgroups.forEach(sub => {
+                                const opt = document.createElement('option');
+                                opt.value = sub.id;
+                                opt.textContent = `[${g.name}] ${sub.name}`;
+                                optgroup.appendChild(opt);
+                            });
+                        } else {
+                            const opt = document.createElement('option');
+                            opt.value = g.id;
+                            opt.textContent = g.name;
+                            optgroup.appendChild(opt);
+                        }
+                    });
+                    select.appendChild(optgroup);
+                }
+            }
+        } catch(e) {}
+    }
+
+    function formatDate(dateStr) {
+        if (!dateStr) return '-';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleString('vi-VN', {day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'});
+    }
+
+    let currentInventoryData = [];
+
+    async function loadInventory() {
+        const groupId = document.getElementById('inv-group-filter').value;
+        const tbody = document.getElementById('inventory-body');
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Đang tải dữ liệu...</td></tr>';
+        try {
+            const url = groupId ? `/api/inventory?group_id=${groupId}` : '/api/inventory';
+            const res = await fetch(url);
+            const result = await res.json();
+            
+            if (result.success) {
+                currentInventoryData = result.data;
+                renderInventory(currentInventoryData);
+            }
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Lỗi tải dữ liệu.</td></tr>';
+        }
+    }
+
+    function renderInventory(data) {
+        const tbody = document.getElementById('inventory-body');
+        tbody.innerHTML = '';
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">Chưa có sản phẩm nào trong kho.</td></tr>';
+            return;
+        }
+        data.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            
+            const isSold = item.status == 1;
+            const statusText = isSold ? '<span style="color:#ff4d4d;font-weight:bold;">Đã Bán</span>' : '<span style="color:#00ff88;font-weight:bold;">Chưa Bán</span>';
+            const buyerCode = isSold ? `<strong style="color:#00D8FF;">${item.buyer_code || '-'}</strong>` : '-';
+            const createdAt = formatDate(item.created_at);
+            const updatedAt = isSold ? formatDate(item.updated_at) : '-';
+            
+            let noidung = `TK: ${item.username || '-'}<br>MK: ${item.password || '-'}`;
+            if(item.extra_data) noidung += `<br>Mail: ${item.extra_data}`;
+            
+            tr.innerHTML = `
+                <td>${index + 1} (ID:${item.id})</td>
+                <td style="font-weight:bold;">${item.code}</td>
+                <td style="font-size: 13px; line-height: 1.4;">${noidung}</td>
+                <td>${buyerCode}</td>
+                <td style="font-size: 12px; color: #aaa;">${createdAt}</td>
+                <td style="font-size: 12px; color: #aaa;">${updatedAt}</td>
+                <td>${statusText}</td>
+                <td>
+                    <button class="btn-edit" onclick="editInventory('${item.id}', '${item.username || ''}', '${item.password || ''}', '${item.extra_data || ''}')">Sửa</button>
+                    <button class="btn-delete" onclick="deleteInventory('${item.id}')">Xóa</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function filterInventoryByCode() {
+        const query = document.getElementById('inv-search-code').value.toLowerCase().trim();
+        if(!query) {
+            renderInventory(currentInventoryData);
+            return;
+        }
+        const filtered = currentInventoryData.filter(item => {
+            return (item.buyer_code && item.buyer_code.toLowerCase().includes(query)) || 
+                   (item.code && item.code.toLowerCase().includes(query));
+        });
+        renderInventory(filtered);
+    }
+
+    async function editInventory(id, oldUser, oldPass, oldEmail) {
+        const username = prompt("Sửa Tài Khoản (bỏ trống nếu không có):", oldUser);
+        if(username === null) return;
+        const password = prompt("Sửa Mật Khẩu / Code (bắt buộc):", oldPass);
+        if(!password) return alert("Mật khẩu không được để trống!");
+        const extra_data = prompt("Sửa Email Gắn Kèm:", oldEmail);
+        
+        try {
+            const res = await fetch(`/api/inventory/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, extra_data })
+            });
+            const result = await res.json();
+            if(result.success) loadInventory();
+            else alert("Lỗi: " + result.message);
+        } catch(e) { alert("Lỗi kết nối."); }
+    }
+
+    async function deleteInventory(id) {
+        if(!confirm("Bạn có chắc chắn muốn xóa sản phẩm này khỏi kho không?")) return;
+        try {
+            const res = await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
+            const result = await res.json();
+            if(result.success) loadInventory();
+            else alert("Lỗi: " + result.message);
+        } catch(e) { alert("Lỗi kết nối."); }
+    }
+
+    // Khởi tạo
+    loadGroups();
+    setInterval(() => {
+        if(document.getElementById('tab-dashboard').classList.contains('active')) {
+            loadStats();
+        }
+    }, 30000);
+</script>
+
+</body>
+</html>
