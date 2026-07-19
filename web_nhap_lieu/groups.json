@@ -1,0 +1,65 @@
+{
+  "acc_pc": [
+    {
+      "id": "101",
+      "name": "🛒 Acc PUBG Giá Chợ Đen",
+      "type": "account"
+    },
+    {
+      "id": "102",
+      "name": "🔫 Acc PUBG Súng + Vé Chợ Đen",
+      "type": "account"
+    },
+    {
+      "id": "103",
+      "name": "⚖️ Acc Treo Bán",
+      "type": "account"
+    }
+  ],
+  "gcoin": [
+    {
+      "id": "201",
+      "name": "💎 Mã Nạp Gcoin 500",
+      "type": "item"
+    },
+    {
+      "id": "202",
+      "name": "💎 Mã Nạp Gcoin 1000",
+      "type": "item"
+    },
+    {
+      "id": "203",
+      "name": "💎 Mã Nạp Gcoin 5000",
+      "type": "item"
+    },
+    {
+      "id": "204",
+      "name": "\t💎 Mã Nạp Gcoin 11000",
+      "type": "item"
+    }
+  ],
+  "steam": [
+    {
+      "id": "301",
+      "name": "💳 Steam Wallet 100K",
+      "type": "item"
+    },
+    {
+      "id": "302",
+      "name": "💳 Steam Wallet 200K",
+      "type": "item"
+    }
+  ],
+  "outfit": [
+    {
+      "id": "401",
+      "name": "👕 Set Đồ Mùa Hè",
+      "type": "item"
+    },
+    {
+      "id": "402",
+      "name": "👕 Set Đồ Mùa Đông",
+      "type": "item"
+    }
+  ]
+}

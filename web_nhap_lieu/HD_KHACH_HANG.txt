@@ -1,0 +1,36 @@
+=====================================================
+HƯỚNG DẪN MUA HÀNG TỰ ĐỘNG TẠI LAVIE SHOP
+=====================================================
+Chào mừng bạn đến với Lavie Shop! Hệ thống mua bán của chúng tôi hoàn toàn tự động 24/7.
+Chỉ với vài thao tác cơ bản, bạn sẽ nhận được tài khoản/mã Code ngay lập tức vào tin nhắn.
+
+▶ BƯỚC 1: XEM DANH MỤC VÀ CHỌN HÀNG
+- Tại kênh mua hàng của Server, bạn bấm vào nút "Xem Danh Mục Sản Phẩm".
+- Một cửa sổ ẩn sẽ hiện ra, hoàn toàn bảo mật và riêng tư (chỉ mình bạn thấy).
+- Lựa chọn loại hàng (VD: Acc PC, Code Gcoin...) và xem các lô hàng/tài khoản đang bán.
+- Bạn có thể chuyển trang ⬅️ ➡️ để xem các sản phẩm tiếp theo.
+
+▶ BƯỚC 2: TẠO ĐƠN HÀNG
+- Khi đã ưng ý 1 sản phẩm, bấm vào nút "🛒 Tạo Đơn Hàng" bên dưới sản phẩm đó.
+- Đối với lô hàng: Bot sẽ hỏi bạn muốn mua số lượng bao nhiêu (Nhập số tùy ý theo nhu cầu).
+- Đối với tài khoản lẻ: Bạn chỉ việc bấm xác nhận mua.
+*Lưu ý: Để tránh kẹt đơn hệ thống, mỗi người chỉ được tạo 1 hóa đơn mỗi 5 phút.
+
+▶ BƯỚC 3: THANH TOÁN (CỰC KỲ QUAN TRỌNG)
+- Sau khi chốt đơn, Bot sẽ tạo cho bạn một HÓA ĐƠN KÈM MÃ QR.
+- Số tiền thanh toán sẽ CÓ PHẦN SỐ LẺ (Ví dụ: 100.015 VNĐ). Đuôi số lẻ này chính là MÃ NHẬN DIỆN đơn hàng của bạn.
+- CÁCH NHANH NHẤT: Mở App Ngân hàng và QUÉT MÃ QR này! 
+- ⚠️ TUYỆT ĐỐI KHÔNG ĐƯỢC sửa số tiền! KHÔNG CẦN ghi nội dung chuyển khoản! Chỉ cần quét và chuyển đúng y xì số tiền hiển thị. Nếu nhập sai phần số lẻ, Bot sẽ không thể tự động giao hàng.
+
+▶ BƯỚC 4: NHẬN HÀNG NGAY LẬP TỨC
+- Sau khi chuyển tiền, xin đợi khoảng 15 giây - 1 phút để ngân hàng báo tin.
+- Khi tiền vào, bảng Hóa đơn của bạn sẽ tự động thông báo "✅ GIAO DỊCH THÀNH CÔNG".
+- TÀI KHOẢN / MÃ CODE SẼ ĐƯỢC BOT NHẮN TIN RIÊNG (DM) NGAY LẬP TỨC VÀO HỘP THƯ DISCORD CỦA BẠN!
+*Chú ý: Vui lòng bật tính năng "Cho phép nhận tin nhắn trực tiếp từ thành viên trong máy chủ" (Allow Direct Messages) để Bot có thể gửi hàng cho bạn.
+
+🔹 QUY ĐỊNH HỦY ĐƠN & HỖ TRỢ:
+- Nếu đổi ý không muốn mua, hãy bấm nút "Hủy đơn" để được mua món khác luôn mà không bị dính thời gian chờ 5 phút.
+- Hóa đơn chưa thanh toán sẽ tự động hủy sau 5 phút.
+- Nếu lỡ chuyển khoản sai số tiền hoặc quên mở hộp thư tin nhắn, hãy chụp lại Bill chuyển khoản và liên hệ Admin (Ticket) để được hỗ trợ giao hàng thủ công!
+
+Chúc bạn có những trải nghiệm mua sắm tuyệt vời tại Lavie Shop! 👑
