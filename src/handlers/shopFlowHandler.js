@@ -1,20 +1,22 @@
 /**
- * shopFlowHandler.js - Luồng mua hàng cho KHÁCH, đọc sản phẩm từ MongoDB.
+ * shopFlowHandler.js - Luồng mua hàng cho KHÁCH (MongoDB, danh mục 2 cấp).
  *
- * Màn hình (đều là tin nhắn ẩn - ephemeral, điều hướng bằng interaction.update):
- *   1. Danh mục     (open_shop_menu / mcats)  -> nút mcat_<categoryKey>
- *   2. Sản phẩm     (mcat_<key> / mppg_)      -> select mpsel_<key>, có phân trang
- *   3. Chi tiết+SL  (mpsel chọn productId)    -> select mqty_<productId>
- *   4. QR thanh toán(mqty chọn số lượng)      -> nút mcancel_<reference>
+ * Tất cả đều là NÚT BẤM, không dùng dropdown, và đều sửa tại chỗ trên cùng một
+ * tin nhắn ẩn (ephemeral) bằng interaction.update - khách không bị trôi tin nhắn.
  *
- * So với bản MariaDB cũ: bỏ một cấp. Maria tách "nhóm" và "biến thể" vì giá nằm ở
- * từng dòng list_items; trong Mongo thì Product đã mang sẵn giá nên chọn thẳng
- * sản phẩm. Luồng thanh toán phía sau giữ nguyên không đổi.
+ *   1. Danh mục cấp 1   (open_shop_menu / mroot)  -> mc1_<key>
+ *   2. Danh mục cấp 2   (mc1_<key>)               -> mc2_<key>      | back: mroot
+ *   3. Sản phẩm         (mc2_<key>)               -> mprod_<id>     | back: mc1_<parent>
+ *   4. Chi tiết + SL    (mprod_<id>)              -> mbuy_<id>_<sl> | back: mc2_<key>
+ *   5. QR thanh toán    (mbuy_...)                -> mcancel_<ref>
  *
- * customId dùng prefix "m..." để không đụng các handler khác.
+ * Phân trang cũng bằng nút: mc2p_/mprodp_<key>_<trang>.
+ *
+ * Giới hạn Discord: tối đa 5 hàng x 5 nút = 25 component mỗi tin nhắn. Chừa 1 hàng
+ * cho điều hướng nên mỗi trang hiển thị tối đa 20 mục.
  */
 const {
-    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder
+    EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
 const catalog = require('../services/catalogService');
 const orderService = require('../services/orderService');
@@ -22,7 +24,8 @@ const orderService = require('../services/orderService');
 const BRAND = '#00D8FF';
 const GOLD = '#FFD700';
 const DANGER = '#ff4d4d';
-const PRODUCTS_PER_PAGE = 24;
+const PER_PAGE = 20;      // 4 hàng x 5 nút
+const QTY_CHOICES = [1, 2, 3, 5, 10];
 
 function catEmoji(name) {
     const n = (name || '').toLowerCase();
@@ -32,51 +35,119 @@ function catEmoji(name) {
     if (n.includes('steam')) return '💳';
     if (n.includes('gcoin') || n.includes('coin')) return '🪙';
     if (n.includes('outfit') || n.includes('trang phục')) return '👕';
+    if (n.includes('acc')) return '🎮';
     return '🛒';
 }
 
-// Tin nhắn hiện tại có phải ephemeral không (để chọn update vs reply)
 function isEphemeral(interaction) {
     return interaction.message?.flags?.has(64);
 }
 
 async function replyOrUpdate(interaction, payload) {
-    if (isEphemeral(interaction)) {
-        return interaction.update(payload);
-    }
+    if (isEphemeral(interaction)) return interaction.update(payload);
     return interaction.reply({ ...payload, ephemeral: true });
 }
 
-function backRow(customId, label) {
-    return new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(ButtonStyle.Secondary)
-    );
+/** Xếp danh sách mục thành các hàng nút, tối đa 5 nút mỗi hàng */
+function buttonRows(items, makeButton, maxRows = 4) {
+    const rows = [];
+    let row = new ActionRowBuilder();
+    items.forEach((it, i) => {
+        if (i > 0 && i % 5 === 0) {
+            rows.push(row);
+            row = new ActionRowBuilder();
+        }
+        row.addComponents(makeButton(it));
+    });
+    if (row.components.length) rows.push(row);
+    return rows.slice(0, maxRows);
+}
+
+/** Hàng điều hướng: quay lại + phân trang (nếu có) */
+function navRow({ backId, backLabel, prevId, nextId }) {
+    const row = new ActionRowBuilder();
+    if (prevId) row.addComponents(new ButtonBuilder().setCustomId(prevId).setLabel('⬅️ Trang trước').setStyle(ButtonStyle.Primary));
+    if (nextId) row.addComponents(new ButtonBuilder().setCustomId(nextId).setLabel('Trang sau ➡️').setStyle(ButtonStyle.Primary));
+    if (backId) row.addComponents(new ButtonBuilder().setCustomId(backId).setLabel(backLabel || '⬅️ Quay lại').setStyle(ButtonStyle.Secondary));
+    return row;
+}
+
+function paginate(all, page) {
+    const totalPages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+    page = Math.min(Math.max(1, page), totalPages);
+    return { items: all.slice((page - 1) * PER_PAGE, page * PER_PAGE), page, totalPages };
 }
 
 // ═══════════════════════════════════════════════════
-// 1. MÀN DANH MỤC
+// MÀN 1: DANH MỤC CẤP 1
 // ═══════════════════════════════════════════════════
-async function showCategories(interaction) {
-    const cats = await catalog.getCategories();
+async function showRoots(interaction) {
+    const roots = await catalog.getRootCategories();
 
-    if (cats.length === 0) {
+    if (!roots.length) {
         return replyOrUpdate(interaction, {
             content: '🛠️ Hiện chưa có sản phẩm nào. Vui lòng quay lại sau!',
             embeds: [], components: []
         });
     }
 
-    // Một embed chỉ mang được một ảnh, nên mỗi danh mục là một embed riêng để
-    // ảnh của nó hiện ra. Discord cho tối đa 10 embed mỗi tin nhắn.
-    const shown = cats.slice(0, 9);
+    // Mỗi embed chỉ mang được một ảnh -> mỗi danh mục một embed để ảnh hiện ra.
+    // Discord cho tối đa 10 embed mỗi tin nhắn.
+    const shown = roots.slice(0, 9);
+    const embeds = [
+        new EmbedBuilder()
+            .setTitle('🌟 DANH MỤC SẢN PHẨM')
+            .setDescription('Chọn danh mục bạn muốn mua 👇')
+            .setColor(BRAND)
+    ];
+    for (const r of shown) {
+        const e = new EmbedBuilder()
+            .setTitle(`${catEmoji(r.name)} ${r.name}`)
+            .setDescription(`📦 Còn \`${r.avail}\` sản phẩm`)
+            .setColor(BRAND);
+        if (r.imageUrl) e.setThumbnail(r.imageUrl);
+        embeds.push(e);
+    }
 
-    const header = new EmbedBuilder()
-        .setTitle('🌟 DANH MỤC SẢN PHẨM')
-        .setDescription('Vui lòng chọn danh mục bạn muốn mua bên dưới 👇')
-        .setColor(BRAND);
+    const rows = buttonRows(shown, r => new ButtonBuilder()
+        .setCustomId(`mc1_${r.key}`)
+        .setLabel(`${r.name} (${r.avail})`.slice(0, 80))
+        .setEmoji(catEmoji(r.name))
+        .setStyle(ButtonStyle.Primary), 5);
 
-    const embeds = [header];
-    for (const c of shown) {
+    return replyOrUpdate(interaction, { content: '', embeds, components: rows });
+}
+
+// ═══════════════════════════════════════════════════
+// MÀN 2: DANH MỤC CẤP 2
+// ═══════════════════════════════════════════════════
+async function showChildren(interaction, parentKey, page = 1) {
+    const parent = await catalog.getCategory(parentKey);
+    const all = await catalog.getChildCategories(parentKey);
+
+    if (!all.length) {
+        return interaction.update({
+            content: '🛠️ Danh mục này hiện đang hết hàng. Vui lòng chọn danh mục khác!',
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Về Danh Mục' })]
+        });
+    }
+
+    const { items, page: p, totalPages } = paginate(all, page);
+    const parentName = parent ? parent.name : parentKey;
+
+    const embeds = [
+        new EmbedBuilder()
+            .setTitle(`${catEmoji(parentName)} ${parentName}`)
+            .setDescription(
+                `Chọn loại sản phẩm bạn quan tâm 👇` +
+                (totalPages > 1 ? `\n\n📄 Trang **${p}/${totalPages}**` : '')
+            )
+            .setColor(BRAND)
+    ];
+    if (parent?.imageUrl) embeds[0].setThumbnail(parent.imageUrl);
+
+    for (const c of items.slice(0, 9)) {
         const e = new EmbedBuilder()
             .setTitle(`${catEmoji(c.name)} ${c.name}`)
             .setDescription(`📦 Còn \`${c.avail}\` sản phẩm`)
@@ -85,95 +156,94 @@ async function showCategories(interaction) {
         embeds.push(e);
     }
 
-    const rows = [];
-    let row = new ActionRowBuilder();
-    shown.forEach((c, i) => {
-        if (i > 0 && i % 5 === 0) { rows.push(row); row = new ActionRowBuilder(); }
-        row.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`mcat_${c.key}`)
-                .setLabel(`${c.name} (${c.avail})`.slice(0, 80))
-                .setEmoji(catEmoji(c.name))
-                .setStyle(ButtonStyle.Primary)
-        );
-    });
-    if (row.components.length) rows.push(row);
+    const rows = buttonRows(items, c => new ButtonBuilder()
+        .setCustomId(`mc2_${c.key}`)
+        .setLabel(`${c.name} (${c.avail})`.slice(0, 80))
+        .setStyle(ButtonStyle.Secondary));
 
-    return replyOrUpdate(interaction, { content: '', embeds, components: rows.slice(0, 5) });
+    rows.push(navRow({
+        backId: 'mroot',
+        backLabel: '⬅️ Về Danh Mục',
+        prevId: p > 1 ? `mc2p_${parentKey}_${p - 1}` : null,
+        nextId: p < totalPages ? `mc2p_${parentKey}_${p + 1}` : null
+    }));
+
+    return interaction.update({ content: '', embeds, components: rows });
 }
 
 // ═══════════════════════════════════════════════════
-// 2. MÀN SẢN PHẨM trong danh mục (select + phân trang)
+// MÀN 3: SẢN PHẨM
 // ═══════════════════════════════════════════════════
-async function showProducts(interaction, categoryKey, page = 1) {
-    const cat = await catalog.getCategory(categoryKey);
-    const all = await catalog.getProducts(categoryKey);
+async function showProducts(interaction, childKey, page = 1) {
+    const cat = await catalog.getCategory(childKey);
+    const all = await catalog.getProducts(childKey);
+    const backId = cat?.parentKey ? `mc1_${cat.parentKey}` : 'mroot';
 
-    if (all.length === 0) {
+    if (!all.length) {
         return interaction.update({
-            content: '🛠️ Danh mục này hiện đang hết hàng. Vui lòng quay lại sau!',
+            content: '⚠️ Danh mục này vừa hết hàng. Vui lòng chọn mục khác!',
             embeds: [],
-            components: [backRow('mcats', '⬅️ Về Danh Mục')]
+            components: [navRow({ backId, backLabel: '⬅️ Quay lại' })]
         });
     }
 
-    const totalPages = Math.max(1, Math.ceil(all.length / PRODUCTS_PER_PAGE));
-    page = Math.min(Math.max(1, page), totalPages);
-    const items = all.slice((page - 1) * PRODUCTS_PER_PAGE, page * PRODUCTS_PER_PAGE);
+    const { items, page: p, totalPages } = paginate(all, page);
+    const catName = cat ? cat.name : childKey;
 
-    const catName = cat ? cat.name : categoryKey;
     const embed = new EmbedBuilder()
-        .setTitle(`${catEmoji(catName)} ${catName}`)
+        .setTitle(`📦 ${catName}`)
         .setDescription(
-            `Đang có **${all.length}** sản phẩm. Chọn sản phẩm bên dưới để xem chi tiết & mua.` +
-            (totalPages > 1 ? `\n\n📄 Trang **${page}/${totalPages}**` : '')
+            `Đang có **${all.length}** sản phẩm. Bấm vào sản phẩm để xem chi tiết & mua 👇` +
+            (totalPages > 1 ? `\n\n📄 Trang **${p}/${totalPages}**` : '')
         )
         .setColor(BRAND);
     if (cat?.imageUrl) embed.setThumbnail(cat.imageUrl);
 
-    const selectRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId(`mpsel_${categoryKey}`)
-            .setPlaceholder('🔽 Chọn sản phẩm để xem chi tiết...')
-            .addOptions(items.map(p => ({
-                label: p.name.slice(0, 90),
-                value: p.id,
-                description: `${p.price.toLocaleString('vi-VN')}đ • Còn ${p.avail}`.slice(0, 90),
-                emoji: '🛒'
-            })))
-    );
-
-    const components = [selectRow];
-
-    if (totalPages > 1) {
-        const nav = new ActionRowBuilder();
-        if (page > 1) nav.addComponents(new ButtonBuilder().setCustomId(`mppg_${categoryKey}_${page - 1}`).setLabel('⬅️ Trang trước').setStyle(ButtonStyle.Primary));
-        if (page < totalPages) nav.addComponents(new ButtonBuilder().setCustomId(`mppg_${categoryKey}_${page + 1}`).setLabel('Trang sau ➡️').setStyle(ButtonStyle.Primary));
-        if (nav.components.length) components.push(nav);
+    for (const pr of items.slice(0, 20)) {
+        embed.addFields({
+            name: pr.name.slice(0, 250),
+            value: `💰 \`${pr.price.toLocaleString('vi-VN')}đ\` • 📦 Còn \`${pr.avail}\``,
+            inline: true
+        });
     }
-    components.push(backRow('mcats', '⬅️ Về Danh Mục'));
 
-    return interaction.update({ content: '', embeds: [embed], components });
+    const rows = buttonRows(items, pr => new ButtonBuilder()
+        .setCustomId(`mprod_${pr.id}`)
+        .setLabel(`${pr.name}`.slice(0, 80))
+        .setEmoji('🛒')
+        .setStyle(ButtonStyle.Secondary));
+
+    rows.push(navRow({
+        backId,
+        backLabel: '⬅️ Quay lại',
+        prevId: p > 1 ? `mprodp_${childKey}_${p - 1}` : null,
+        nextId: p < totalPages ? `mprodp_${childKey}_${p + 1}` : null
+    }));
+
+    return interaction.update({ content: '', embeds: [embed], components: rows });
 }
 
 // ═══════════════════════════════════════════════════
-// 3. MÀN CHI TIẾT SẢN PHẨM + CHỌN SỐ LƯỢNG
+// MÀN 4: CHI TIẾT SẢN PHẨM + CHỌN SỐ LƯỢNG (nút)
 // ═══════════════════════════════════════════════════
 async function showDetail(interaction, productId) {
     const p = await catalog.getProduct(productId);
     if (!p || p.avail === 0) {
         return interaction.update({
             content: '⚠️ Sản phẩm này vừa hết hàng hoặc có người khác đang mua. Vui lòng chọn sản phẩm khác!',
-            embeds: [], components: [backRow('mcats', '⬅️ Về Danh Mục')]
+            embeds: [],
+            components: [navRow({ backId: 'mroot', backLabel: '⬅️ Về Danh Mục' })]
         });
     }
 
-    let desc = `💰 **Giá:** \`${p.price.toLocaleString('vi-VN')}đ\` / sản phẩm\n📦 **Còn lại:** \`${p.avail}\` sản phẩm\n`;
+    let desc = `💰 **Giá:** \`${p.price.toLocaleString('vi-VN')}đ\` / sản phẩm\n` +
+               `📦 **Còn lại:** \`${p.avail}\` sản phẩm\n`;
     if (p.description) {
         const lines = p.description.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 12);
         if (lines.length) desc += `\n**Thông tin sản phẩm:**\n` + lines.map(l => `> 🔹 ${l}`).join('\n');
     }
-    desc += `\n\n*Thông tin đăng nhập/code sẽ được gửi ngay vào tin nhắn riêng sau khi thanh toán.*`;
+    desc += `\n\n*Thông tin đăng nhập/code sẽ được gửi ngay vào tin nhắn riêng sau khi thanh toán.*` +
+            `\n\n**Chọn số lượng cần mua 👇**`;
 
     const embed = new EmbedBuilder()
         .setTitle(`🛒 ${p.name}`)
@@ -181,31 +251,23 @@ async function showDetail(interaction, productId) {
         .setColor(GOLD);
     if (p.imageUrl) embed.setImage(p.imageUrl);
 
-    // VIP chỉ bán 1 mỗi đơn (orderService cũng ép lại, đây chỉ là phần hiển thị)
+    // VIP chỉ bán 1 mỗi đơn (orderService cũng ép lại, đây chỉ là hiển thị)
     const maxQty = p.type === 'vip' ? 1 : p.avail;
-    const qtyChoices = [1, 2, 3, 5, 10].filter(n => n <= maxQty);
-    if (qtyChoices.length === 0) qtyChoices.push(1);
+    const choices = QTY_CHOICES.filter(n => n <= maxQty);
+    if (!choices.length) choices.push(1);
 
-    const qtyRow = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId(`mqty_${p.id}`)
-            .setPlaceholder('🧮 Chọn số lượng cần mua...')
-            .addOptions(qtyChoices.map(n => ({
-                label: `Mua ${n} sản phẩm`,
-                value: String(n),
-                description: `Tổng: ${(n * p.price).toLocaleString('vi-VN')}đ`
-            })))
-    );
+    const rows = buttonRows(choices, n => new ButtonBuilder()
+        .setCustomId(`mbuy_${p.id}_${n}`)
+        .setLabel(`Mua ${n} — ${(n * p.price).toLocaleString('vi-VN')}đ`.slice(0, 80))
+        .setStyle(ButtonStyle.Success), 4);
 
-    return interaction.update({
-        content: '',
-        embeds: [embed],
-        components: [qtyRow, backRow(`mcat_${p.webCategory}`, '⬅️ Về danh sách')]
-    });
+    rows.push(navRow({ backId: `mc2_${p.webCategory}`, backLabel: '⬅️ Quay lại' }));
+
+    return interaction.update({ content: '', embeds: [embed], components: rows });
 }
 
 // ═══════════════════════════════════════════════════
-// 4. TẠO ĐƠN + HIỂN THỊ QR
+// MÀN 5: TẠO ĐƠN + QR
 // ═══════════════════════════════════════════════════
 async function createOrderAndShowQR(interaction, productId, quantity) {
     await interaction.deferUpdate();
@@ -220,17 +282,28 @@ async function createOrderAndShowQR(interaction, productId, quantity) {
     );
 
     if (!result.success) {
-        return interaction.editReply({ content: `❌ ${result.message}`, embeds: [], components: [] });
+        const p = await catalog.getProduct(productId);
+        return interaction.editReply({
+            content: `❌ ${result.message}`,
+            embeds: [],
+            components: [navRow({
+                backId: p ? `mc2_${p.webCategory}` : 'mroot',
+                backLabel: '⬅️ Quay lại'
+            })]
+        });
     }
 
-    const embed = paymentEmbed(result.order, result.qrUrl);
     const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(`mcancel_${result.order.reference}`)
             .setLabel('❌ Hủy giao dịch')
             .setStyle(ButtonStyle.Danger)
     );
-    return interaction.editReply({ content: '', embeds: [embed], components: [row] });
+    return interaction.editReply({
+        content: '',
+        embeds: [paymentEmbed(result.order, result.qrUrl)],
+        components: [row]
+    });
 }
 
 // ═══════════════════════════════════════════════════
@@ -239,7 +312,6 @@ async function createOrderAndShowQR(interaction, productId, quantity) {
 async function cancelOrder(interaction, reference) {
     await interaction.deferUpdate();
 
-    // Chỉ chủ đơn mới được hủy - customId nằm trong tin ẩn nhưng vẫn kiểm tra cho chắc
     const order = await orderService.findByReference(reference);
     if (!order) {
         return interaction.editReply({ content: '❌ Không tìm thấy đơn hàng.', embeds: [], components: [] });
@@ -257,7 +329,7 @@ async function cancelOrder(interaction, reference) {
         content: `✅ Đã hủy giao dịch **${reference}**.`,
         embeds: [],
         components: [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('open_shop_menu').setLabel('🛒 Mua hàng tiếp').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('mroot').setLabel('🛒 Mua hàng tiếp').setStyle(ButtonStyle.Success)
         )]
     });
 }
@@ -285,36 +357,43 @@ function paymentEmbed(order, qrUrl) {
         .setTimestamp();
 }
 
+/** Tách "<key>_<số trang>" - key có thể chứa '_' nên cắt từ phải sang */
+function splitPage(rest) {
+    const i = rest.lastIndexOf('_');
+    return { key: rest.slice(0, i), page: parseInt(rest.slice(i + 1)) || 1 };
+}
+
 // ═══════════════════════════════════════════════════
 // ROUTER: trả về true nếu đã xử lý interaction
 // ═══════════════════════════════════════════════════
 async function route(interaction) {
-    if (interaction.isButton()) {
-        const id = interaction.customId;
-        if (id === 'open_shop_menu' || id === 'mcats') { await showCategories(interaction); return true; }
-        if (id.startsWith('mppg_')) {
-            // mppg_<categoryKey>_<page> - key có thể chứa '_' nên cắt page từ phải sang
-            const rest = id.slice(5);
-            const i = rest.lastIndexOf('_');
-            await showProducts(interaction, rest.slice(0, i), parseInt(rest.slice(i + 1)));
-            return true;
-        }
-        if (id.startsWith('mcat_')) { await showProducts(interaction, id.slice(5), 1); return true; }
-        if (id.startsWith('mcancel_')) { await cancelOrder(interaction, id.slice(8)); return true; }
-        return false;
+    if (!interaction.isButton()) return false;
+    const id = interaction.customId;
+
+    if (id === 'open_shop_menu' || id === 'mroot' || id === 'mcats') { await showRoots(interaction); return true; }
+
+    // Phân trang phải kiểm tra TRƯỚC vì tiền tố dài hơn dễ bị prefix ngắn nuốt mất
+    if (id.startsWith('mc2p_')) {
+        const { key, page } = splitPage(id.slice(5));
+        await showChildren(interaction, key, page); return true;
+    }
+    if (id.startsWith('mprodp_')) {
+        const { key, page } = splitPage(id.slice(7));
+        await showProducts(interaction, key, page); return true;
     }
 
-    if (interaction.isStringSelectMenu()) {
-        const id = interaction.customId;
-        if (id.startsWith('mpsel_')) { await showDetail(interaction, interaction.values[0]); return true; }
-        if (id.startsWith('mqty_')) {
-            await createOrderAndShowQR(interaction, id.slice(5), parseInt(interaction.values[0]));
-            return true;
-        }
-        return false;
+    if (id.startsWith('mc1_')) { await showChildren(interaction, id.slice(4), 1); return true; }
+    if (id.startsWith('mc2_')) { await showProducts(interaction, id.slice(4), 1); return true; }
+    if (id.startsWith('mprod_')) { await showDetail(interaction, id.slice(6)); return true; }
+    if (id.startsWith('mbuy_')) {
+        const rest = id.slice(5);
+        const i = rest.lastIndexOf('_');
+        await createOrderAndShowQR(interaction, rest.slice(0, i), parseInt(rest.slice(i + 1)) || 1);
+        return true;
     }
+    if (id.startsWith('mcancel_')) { await cancelOrder(interaction, id.slice(8)); return true; }
 
     return false;
 }
 
-module.exports = { route, showCategories };
+module.exports = { route, showCategories: showRoots };

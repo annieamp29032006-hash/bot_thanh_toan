@@ -439,22 +439,30 @@ Nếu bán Code: Mã_Code
     <div id="tab-categories" class="tab-pane">
         <h2>🗂️ Quản Lý Danh Mục Sản Phẩm</h2>
         <p style="color:#8b949e; margin-bottom:22px; text-align:center;">
-            Danh mục là cấp đầu tiên khách thấy trong <b>/shop</b> của bot.
-            Ảnh chỉ lưu link — dán sẵn link, hoặc chọn file để đẩy lên Discord lấy link.
+            Danh mục có <b>2 cấp</b>. Khách bấm <b>/shop</b> sẽ thấy cấp 1 trước, chọn xong mới hiện cấp 2,
+            rồi mới tới sản phẩm.<br>
+            <b>Mặt hàng luôn thuộc danh mục cấp 2</b> — cấp 1 chỉ để gom nhóm.
+            Ảnh chỉ lưu link.
         </p>
 
         <div style="border:1px solid var(--glass-border); background:rgba(255,255,255,0.03); border-radius:12px; padding:20px; margin-bottom:26px;">
-            <h3 style="margin-top:0; color:var(--primary);">➕ Thêm danh mục mới</h3>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <h3 style="margin-top:0; color:var(--primary);">➕ Thêm danh mục</h3>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px;">
                 <div>
-                    <label>Mã danh mục (không dấu, viết liền)</label>
-                    <input type="text" id="cat-new-key" placeholder="vd: lienquan">
+                    <label>Thuộc danh mục cha</label>
+                    <select id="cat-new-parent">
+                        <option value="">— Tạo danh mục CẤP 1 —</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Mã (không dấu, viết liền)</label>
+                    <input type="text" id="cat-new-key" placeholder="vd: pubg_acc">
                 </div>
                 <div>
                     <label>Tên hiển thị</label>
-                    <input type="text" id="cat-new-name" placeholder="vd: Liên Quân Mobile">
+                    <input type="text" id="cat-new-name" placeholder="vd: Acc PUBG">
                 </div>
-                <div>
+                <div style="grid-column:1 / 3;">
                     <label>Link ảnh (tùy chọn)</label>
                     <input type="text" id="cat-new-img" placeholder="https://...">
                 </div>
@@ -466,8 +474,24 @@ Nếu bán Code: Mã_Code
             <button id="cat-add-btn" onclick="createCategory()">➕ Tạo danh mục</button>
         </div>
 
-        <div id="cat-list">Đang tải...</div>
-        <div id="catMsg" style="margin-top:14px; text-align:center; font-weight:600;"></div>
+        <div id="catMsg" style="margin-bottom:14px; text-align:center; font-weight:600;"></div>
+
+        <table id="cat-table">
+            <thead>
+                <tr>
+                    <th style="width:70px;">Ảnh</th>
+                    <th>Danh mục</th>
+                    <th style="width:130px;">Mã</th>
+                    <th style="width:80px;">Cấp</th>
+                    <th style="width:90px;">Mặt hàng</th>
+                    <th style="width:70px;">Thứ tự</th>
+                    <th style="width:230px;">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="cat-body">
+                <tr><td colspan="7">Đang tải...</td></tr>
+            </tbody>
+        </table>
     </div>
 
     <div id="tab-inventory" class="tab-pane">
@@ -537,15 +561,24 @@ Nếu bán Code: Mã_Code
     }
 
     // Xử lý tải API Groups
-    const catNames = {
-        "acc_pc": "🎮 ACCOUNT PC",
-        "gcoin": "💎 CODE GCOIN",
-        "steam": "💳 STEAM WALLET",
-        "outfit": "👕 TRANG PHỤC"
-    };
+    // Tên danh mục lấy động từ DB (dạng "Cấp 1 › Cấp 2"), không hardcode nữa -
+    // hardcode thì danh mục tự tạo sẽ hiện ra mã thô như "pubg_acc".
+    let catNames = {};
+    async function refreshCatNames() {
+        try {
+            const tree = await api('/api/categories');
+            const m = {};
+            for (const root of tree) {
+                m[root.key] = root.name;
+                for (const c of (root.children || [])) m[c.key] = `${root.name} › ${c.name}`;
+            }
+            catNames = m;
+        } catch (e) { /* giữ nguyên map cũ nếu lỗi */ }
+    }
 
     async function loadGroups() {
         try {
+            await refreshCatNames();
             const res = await fetch('/api/groups');
             const data = await res.json();
             
@@ -873,7 +906,7 @@ Nếu bán Code: Mã_Code
     }, 30000);
 
 
-// ─── DANH MỤC (CRUD) ───────────────────────────────────────────
+// ─── DANH MỤC 2 CẤP (CRUD dạng bảng) ──────────────────────────
 async function api(url, opts) {
     const r = await fetch(url, opts);
     if (r.status === 401) { location.href = '/login'; throw new Error('Phiên đã hết hạn'); }
@@ -886,7 +919,7 @@ function catMsg(text, ok) {
     const el = document.getElementById('catMsg');
     el.style.color = ok ? '#00ff88' : '#ff4d4d';
     el.textContent = text;
-    if (ok) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000);
+    if (ok) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 5000);
 }
 
 function esc(v) {
@@ -894,53 +927,117 @@ function esc(v) {
         c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-async function loadCategories() {
-    const box = document.getElementById('cat-list');
-    box.innerHTML = 'Đang tải...';
-    try {
-        const cats = await api('/api/categories');
-        if (!cats.length) { box.innerHTML = '<i style="color:#8b949e;">Chưa có danh mục nào. Hãy tạo ở trên.</i>'; return; }
-        box.innerHTML = cats.map(c => `
-            <div style="border:1px solid var(--glass-border); background:rgba(255,255,255,0.03); border-radius:12px; padding:16px; margin-bottom:14px; display:flex; gap:16px; align-items:flex-start;">
-                <img src="${esc(c.imageUrl)}" alt=""
-                     style="width:84px; height:84px; object-fit:cover; border-radius:8px; background:rgba(0,0,0,0.3); border:1px solid var(--glass-border); flex-shrink:0;"
-                     onerror="this.style.opacity=0.2">
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <div>
-                            <b style="color:#fff; font-size:16px;">${esc(c.name)}</b>
-                            <span style="color:#8b949e;"> (${esc(c.key)}) — ${c.productCount} mặt hàng</span>
-                            ${c.isActive ? '' : '<span style="color:#ff4d4d;"> • đang ẩn</span>'}
-                        </div>
-                        <div style="display:flex; gap:6px;">
-                            <button class="tab-btn" onclick="toggleCategory('${esc(c.key)}', ${!c.isActive})">${c.isActive ? '🙈 Ẩn' : '👁️ Hiện'}</button>
-                            <button class="tab-btn" onclick="deleteCategory('${esc(c.key)}', '${esc(c.name)}')" style="background:rgba(255,77,77,0.15); border-color:rgba(255,77,77,0.4);">🗑️ Xoá</button>
-                        </div>
-                    </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
-                        <div>
-                            <label style="font-size:13px;">Tên hiển thị</label>
-                            <input type="text" id="name-${esc(c.key)}" value="${esc(c.name)}" style="margin-bottom:0;">
-                        </div>
-                        <div>
-                            <label style="font-size:13px;">Thứ tự</label>
-                            <input type="number" id="sort-${esc(c.key)}" value="${c.sortOrder}" style="margin-bottom:0;">
-                        </div>
-                    </div>
-                    <div style="margin-top:10px;">
-                        <label style="font-size:13px;">Link ảnh</label>
-                        <input type="text" id="url-${esc(c.key)}" value="${esc(c.imageUrl)}" placeholder="Dán link ảnh..." style="margin-bottom:0;">
-                    </div>
-                    <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                        <button class="tab-btn" onclick="saveCategory('${esc(c.key)}')">💾 Lưu</button>
-                        <input type="file" id="file-${esc(c.key)}" accept="image/*" style="width:auto; margin-bottom:0; padding:8px;">
-                        <button class="tab-btn" onclick="uploadCatImage('${esc(c.key)}')">⬆️ Up ảnh & lấy link</button>
-                    </div>
+function catRow(c, isChild) {
+    const pad = isChild ? 'padding-left:26px;' : '';
+    const mark = isChild ? '<span style="color:#8b949e;">└─ </span>' : '';
+    const dim = c.isActive ? '' : 'opacity:0.45;';
+    return `
+    <tr style="${dim}">
+        <td>
+            <img src="${esc(c.imageUrl)}" alt=""
+                 style="width:44px; height:44px; object-fit:cover; border-radius:6px; background:rgba(0,0,0,0.3); border:1px solid var(--glass-border);"
+                 onerror="this.style.opacity=0.15">
+        </td>
+        <td style="${pad}">
+            ${mark}<b style="color:#fff;">${esc(c.name)}</b>
+            ${c.isActive ? '' : '<span style="color:#ff4d4d; font-size:12px;"> (đang ẩn)</span>'}
+        </td>
+        <td style="color:#8b949e; font-family:monospace;">${esc(c.key)}</td>
+        <td>${isChild ? '<span style="color:#8b949e;">Cấp 2</span>' : '<b style="color:var(--primary);">Cấp 1</b>'}</td>
+        <td>${isChild ? c.productCount : `<span style="color:#8b949e;">${c.productCount} (gộp)</span>`}</td>
+        <td>${c.sortOrder}</td>
+        <td>
+            <button class="btn-edit" onclick="openEditCat('${esc(c.key)}')">Sửa</button>
+            <button class="btn-edit" onclick="toggleCategory('${esc(c.key)}', ${!c.isActive})">${c.isActive ? 'Ẩn' : 'Hiện'}</button>
+            <button class="btn-delete" onclick="deleteCategory('${esc(c.key)}', '${esc(c.name)}')">Xóa</button>
+        </td>
+    </tr>`;
+}
+
+function catEditRow(c) {
+    return `
+    <tr id="edit-${esc(c.key)}" style="background:rgba(0,216,255,0.06);">
+        <td colspan="7">
+            <div style="display:grid; grid-template-columns:1fr 1fr 100px; gap:12px; align-items:end;">
+                <div>
+                    <label style="font-size:13px;">Tên hiển thị</label>
+                    <input type="text" id="name-${esc(c.key)}" value="${esc(c.name)}" style="margin-bottom:0;">
                 </div>
-            </div>`).join('');
+                <div>
+                    <label style="font-size:13px;">Link ảnh</label>
+                    <input type="text" id="url-${esc(c.key)}" value="${esc(c.imageUrl)}" placeholder="https://..." style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:13px;">Thứ tự</label>
+                    <input type="number" id="sort-${esc(c.key)}" value="${c.sortOrder}" style="margin-bottom:0;">
+                </div>
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <button class="btn-edit" onclick="saveCategory('${esc(c.key)}')">💾 Lưu</button>
+                <input type="file" id="file-${esc(c.key)}" accept="image/*" style="width:auto; margin-bottom:0; padding:6px;">
+                <button class="btn-edit" onclick="uploadCatImage('${esc(c.key)}')">⬆️ Up ảnh & lấy link</button>
+                <button class="btn-delete" onclick="closeEditCat()">Đóng</button>
+            </div>
+        </td>
+    </tr>`;
+}
+
+let CAT_TREE = [];
+let EDITING = null;
+
+async function loadCategories() {
+    const body = document.getElementById('cat-body');
+    body.innerHTML = '<tr><td colspan="7">Đang tải...</td></tr>';
+    try {
+        CAT_TREE = await api('/api/categories');
+        renderCatTable();
+        fillParentSelect();
+        if (typeof loadGroupOptions === 'function') loadGroupOptions();
     } catch (e) {
-        box.innerHTML = '<span style="color:#ff4d4d;">Lỗi tải danh mục: ' + esc(e.message) + '</span>';
+        body.innerHTML = `<tr><td colspan="7" style="color:#ff4d4d;">Lỗi: ${esc(e.message)}</td></tr>`;
     }
+}
+
+function renderCatTable() {
+    const body = document.getElementById('cat-body');
+    if (!CAT_TREE.length) {
+        body.innerHTML = '<tr><td colspan="7" style="color:#8b949e;">Chưa có danh mục nào. Hãy tạo ở trên.</td></tr>';
+        return;
+    }
+    let html = '';
+    for (const root of CAT_TREE) {
+        html += catRow(root, false);
+        if (EDITING === root.key) html += catEditRow(root);
+        for (const child of (root.children || [])) {
+            html += catRow(child, true);
+            if (EDITING === child.key) html += catEditRow(child);
+        }
+        if (!(root.children || []).length) {
+            html += `<tr><td></td><td colspan="6" style="color:#8b949e; font-style:italic; padding-left:26px;">
+                     └─ chưa có danh mục cấp 2 — mặt hàng không gắn được vào đây</td></tr>`;
+        }
+    }
+    body.innerHTML = html;
+}
+
+function findCat(key) {
+    for (const r of CAT_TREE) {
+        if (r.key === key) return r;
+        for (const c of (r.children || [])) if (c.key === key) return c;
+    }
+    return null;
+}
+
+function openEditCat(key) { EDITING = key; renderCatTable(); }
+function closeEditCat() { EDITING = null; renderCatTable(); }
+
+function fillParentSelect() {
+    const sel = document.getElementById('cat-new-parent');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— Tạo danh mục CẤP 1 —</option>' +
+        CAT_TREE.map(r => `<option value="${esc(r.key)}">Trong: ${esc(r.name)}</option>`).join('');
+    if (cur) sel.value = cur;
 }
 
 async function createCategory() {
@@ -951,6 +1048,7 @@ async function createCategory() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                parentKey: document.getElementById('cat-new-parent').value || null,
                 key: document.getElementById('cat-new-key').value.trim(),
                 name: document.getElementById('cat-new-name').value.trim(),
                 imageUrl: document.getElementById('cat-new-img').value.trim(),
@@ -960,7 +1058,6 @@ async function createCategory() {
         catMsg('✅ ' + d.message, true);
         ['cat-new-key','cat-new-name','cat-new-img'].forEach(i => document.getElementById(i).value = '');
         loadCategories();
-        if (typeof loadGroupOptions === 'function') loadGroupOptions();
     } catch (e) { catMsg('❌ ' + e.message, false); }
     finally { btn.disabled = false; }
 }
@@ -977,6 +1074,7 @@ async function saveCategory(key) {
             })
         });
         catMsg('✅ ' + d.message, true);
+        EDITING = null;
         loadCategories();
     } catch (e) { catMsg('❌ ' + e.message, false); }
 }
@@ -994,12 +1092,11 @@ async function toggleCategory(key, makeActive) {
 }
 
 async function deleteCategory(key, name) {
-    if (!confirm(`Xoá danh mục "${name}"?\n\nChỉ xoá được khi danh mục không còn mặt hàng nào.`)) return;
+    if (!confirm(`Xoá danh mục "${name}"?\n\nChỉ xoá được khi không còn danh mục con và không còn mặt hàng.`)) return;
     try {
         const d = await api('/api/categories/' + encodeURIComponent(key), { method: 'DELETE' });
         catMsg('✅ ' + d.message, true);
         loadCategories();
-        if (typeof loadGroupOptions === 'function') loadGroupOptions();
     } catch (e) { catMsg('❌ ' + e.message, false); }
 }
 
@@ -1022,25 +1119,31 @@ async function logout() {
     location.href = '/login';
 }
 
-
-// Dropdown danh mục ở tab Mặt Hàng phải theo danh mục động, không cứng 4 giá trị
+// Dropdown chọn danh mục khi thêm mặt hàng: CHỈ liệt kê danh mục CẤP 2, vì mặt hàng
+// gắn vào cấp 1 thì bot sẽ không bao giờ hiển thị nó ra được.
 async function loadGroupOptions() {
     const sel = document.getElementById('newCat');
     if (!sel) return;
     const current = sel.value;
     try {
-        const cats = await api('/api/categories');
-        if (!cats.length) {
-            sel.innerHTML = '<option value="">-- Chưa có danh mục, hãy tạo ở tab Danh Mục --</option>';
+        const tree = await api('/api/categories');
+        const opts = [];
+        for (const root of tree) {
+            for (const c of (root.children || [])) {
+                opts.push(`<option value="${esc(c.key)}">${esc(root.name)} › ${esc(c.name)}</option>`);
+            }
+        }
+        if (!opts.length) {
+            sel.innerHTML = '<option value="">-- Chưa có danh mục cấp 2, hãy tạo ở tab Danh Mục --</option>';
             return;
         }
-        sel.innerHTML = cats.map(c =>
-            `<option value="${esc(c.key)}">${esc(c.name)} (${esc(c.key)})</option>`).join('');
+        sel.innerHTML = '<option value="">-- Chọn danh mục cấp 2 --</option>' + opts.join('');
         if (current) sel.value = current;
     } catch (e) {
         sel.innerHTML = '<option value="">-- Lỗi tải danh mục --</option>';
     }
 }
+
 document.addEventListener('DOMContentLoaded', loadGroupOptions);
 
 </script>

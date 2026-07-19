@@ -373,7 +373,19 @@ app.post('/api/groups', async (req, res) => {
     try {
         const { category, name, type } = req.body;
         if (!name || !type) return res.status(400).json({ error: 'Thiếu thông tin' });
-        
+        if (!category) return res.status(400).json({ error: 'Chưa chọn danh mục' });
+
+        // Mặt hàng BẮT BUỘC nằm ở danh mục cấp 2. Gắn vào cấp 1 thì màn hình mua hàng
+        // của bot sẽ không bao giờ hiện ra nó (cấp 1 chỉ dẫn xuống cấp 2).
+        const cat = await Category.findOne({ key: category });
+        if (!cat) return res.status(400).json({ error: `Không tìm thấy danh mục "${category}"` });
+        if (!cat.parentKey) {
+            return res.status(400).json({
+                error: `"${cat.name}" là danh mục cấp 1. Mặt hàng phải thuộc danh mục cấp 2 ` +
+                       `- hãy tạo danh mục con bên trong nó rồi chọn danh mục con đó.`
+            });
+        }
+
         const newProduct = await Product.create({
             name: name,
             type: type,
@@ -405,26 +417,47 @@ app.delete('/api/groups/:category/:id', async (req, res) => {
 // ═══════════════════════════════════════════════════
 app.get('/api/categories', async (req, res) => {
     try {
-        const cats = await Category.find().sort({ sortOrder: 1 }).lean();
+        const cats = await Category.find().sort({ sortOrder: 1, name: 1 }).lean();
         const counts = await Product.aggregate([
             { $match: { isActive: true } },
             { $group: { _id: '$webCategory', n: { $sum: 1 } } }
         ]);
         const map = new Map(counts.map(c => [c._id, c.n]));
-        res.json(cats.map(c => ({
-            key: c.key, name: c.name, description: c.description || '',
-            imageUrl: c.imageUrl || '', sortOrder: c.sortOrder, isActive: c.isActive,
+
+        const shape = c => ({
+            key: c.key, name: c.name, parentKey: c.parentKey || null,
+            level: c.parentKey ? 2 : 1,
+            description: c.description || '', imageUrl: c.imageUrl || '',
+            sortOrder: c.sortOrder, isActive: c.isActive,
             productCount: map.get(c.key) || 0
+        });
+
+        const all = cats.map(shape);
+
+        // ?flat=1 -> danh sách phẳng (dùng cho dropdown). Mặc định trả dạng cây.
+        if (req.query.flat) return res.json(all);
+
+        const roots = all.filter(c => c.level === 1);
+        const byParent = new Map();
+        for (const c of all.filter(x => x.level === 2)) {
+            if (!byParent.has(c.parentKey)) byParent.set(c.parentKey, []);
+            byParent.get(c.parentKey).push(c);
+        }
+        res.json(roots.map(r => ({
+            ...r,
+            children: byParent.get(r.key) || [],
+            // Danh mục cha không gắn sản phẩm trực tiếp -> đếm gộp từ các con
+            productCount: (byParent.get(r.key) || []).reduce((s, c) => s + c.productCount, 0)
         })));
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/categories', async (req, res) => {
     try {
-        const { key, name, description, imageUrl, sortOrder } = req.body;
+        const { key, name, description, imageUrl, sortOrder, parentKey } = req.body;
         if (!key || !name) return res.status(400).json({ error: 'Thiếu mã hoặc tên danh mục' });
 
-        // key đi vào customId của nút Discord (mcat_<key>) nên phải sạch và ngắn
+        // key đi vào customId của nút Discord (mc1_<key>) nên phải sạch và ngắn
         const cleanKey = String(key).trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
         if (!cleanKey) return res.status(400).json({ error: 'Mã chỉ được dùng chữ thường, số và dấu _' });
         if (cleanKey.length > 32) return res.status(400).json({ error: 'Mã tối đa 32 ký tự' });
@@ -433,11 +466,26 @@ app.post('/api/categories', async (req, res) => {
             return res.status(409).json({ error: `Mã "${cleanKey}" đã tồn tại` });
         }
 
+        // Chỉ cho 2 cấp: cha phải tồn tại và bản thân cha không được là danh mục con
+        let parent = null;
+        if (parentKey) {
+            parent = await Category.findOne({ key: parentKey });
+            if (!parent) return res.status(400).json({ error: `Không tìm thấy danh mục cha "${parentKey}"` });
+            if (parent.parentKey) {
+                return res.status(400).json({ error: 'Chỉ hỗ trợ 2 cấp - không thể tạo con của một danh mục con' });
+            }
+        }
+
         const cat = await Category.create({
-            key: cleanKey, name, description: description || '',
+            key: cleanKey, name, parentKey: parentKey || null,
+            description: description || '',
             imageUrl: imageUrl || '', sortOrder: Number(sortOrder) || 0
         });
-        res.json({ success: true, message: `Đã tạo danh mục "${name}"`, data: cat });
+        res.json({
+            success: true,
+            message: `Đã tạo danh mục ${parent ? `"${name}" trong "${parent.name}"` : `cấp 1 "${name}"`}`,
+            data: cat
+        });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -447,8 +495,16 @@ app.delete('/api/categories/:key', async (req, res) => {
         const cat = await Category.findOne({ key });
         if (!cat) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
 
-        // CỐ Ý không xoá theo kiểu dây chuyền: xoá danh mục mà cuốn theo sản phẩm và
-        // kho hàng là mất dữ liệu bán được. Bắt người dùng dọn hoặc chuyển sản phẩm trước.
+        // CỐ Ý không xoá theo kiểu dây chuyền: xoá danh mục mà cuốn theo danh mục con,
+        // sản phẩm và kho hàng là mất dữ liệu bán được. Bắt dọn trước.
+        const childCount = await Category.countDocuments({ parentKey: key });
+        if (childCount > 0) {
+            return res.status(409).json({
+                error: `Danh mục còn ${childCount} danh mục con. Hãy xoá các danh mục con trước, ` +
+                       `hoặc tắt hiển thị thay vì xoá.`
+            });
+        }
+
         const n = await Product.countDocuments({ webCategory: key });
         if (n > 0) {
             return res.status(409).json({

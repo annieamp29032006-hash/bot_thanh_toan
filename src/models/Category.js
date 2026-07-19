@@ -1,23 +1,31 @@
 /**
- * Category.js - Danh mục sản phẩm.
+ * Category.js - Danh mục sản phẩm, dạng cây 2 cấp.
  *
- * Trước đây danh mục chỉ là chuỗi cứng trong Product.webCategory ('acc_pc', 'gcoin',
- * 'steam', 'outfit') nên không có chỗ gắn ảnh. Tách thành collection riêng để mỗi
- * danh mục có ảnh và tên hiển thị của nó.
+ *   Cấp 1 (parentKey = null)  ->  Cấp 2 (parentKey = key của cấp 1)  ->  Product
  *
- * `key` giữ đúng giá trị mà Product.webCategory đang dùng -> dữ liệu cũ vẫn khớp,
- * không phải sửa Product.
+ * Product.webCategory LUÔN trỏ vào key của danh mục CẤP 2. Cấp 1 chỉ để gom nhóm,
+ * không gắn sản phẩm trực tiếp - nếu cho phép gắn cả hai cấp thì màn hình mua hàng
+ * phải xử lý hai kiểu hiển thị lẫn lộn, rất dễ sinh lỗi.
  */
 const mongoose = require('mongoose');
 
 const categorySchema = new mongoose.Schema({
-    key: { type: String, required: true, unique: true, index: true }, // khớp Product.webCategory
-    name: { type: String, required: true },        // tên hiển thị cho khách
+    key: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    // null = danh mục gốc (cấp 1). Có giá trị = danh mục con (cấp 2).
+    parentKey: { type: String, default: null, index: true },
     description: { type: String, default: '' },
-    imageUrl: { type: String, default: '' },       // CHỈ lưu link ảnh, không lưu file
-    sortOrder: { type: Number, default: 0 },       // thứ tự hiện trong menu
+    imageUrl: { type: String, default: '' },   // CHỈ lưu link, không lưu file
+    sortOrder: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
     createdAt: { type: Date, default: Date.now }
 });
+
+categorySchema.virtual('level').get(function () {
+    return this.parentKey ? 2 : 1;
+});
+
+categorySchema.set('toJSON', { virtuals: true });
+categorySchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Category', categorySchema);
