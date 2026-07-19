@@ -66,18 +66,28 @@ async function showCategories(interaction) {
         });
     }
 
-    const embed = new EmbedBuilder()
+    // Một embed chỉ mang được một ảnh, nên mỗi danh mục là một embed riêng để
+    // ảnh của nó hiện ra. Discord cho tối đa 10 embed mỗi tin nhắn.
+    const shown = cats.slice(0, 9);
+
+    const header = new EmbedBuilder()
         .setTitle('🌟 DANH MỤC SẢN PHẨM')
         .setDescription('Vui lòng chọn danh mục bạn muốn mua bên dưới 👇')
         .setColor(BRAND);
 
-    // Danh mục đầu tiên có ảnh thì lấy làm ảnh minh họa cho màn này
-    const withImg = cats.find(c => c.imageUrl);
-    if (withImg) embed.setThumbnail(withImg.imageUrl);
+    const embeds = [header];
+    for (const c of shown) {
+        const e = new EmbedBuilder()
+            .setTitle(`${catEmoji(c.name)} ${c.name}`)
+            .setDescription(`📦 Còn \`${c.avail}\` sản phẩm`)
+            .setColor(BRAND);
+        if (c.imageUrl) e.setThumbnail(c.imageUrl);
+        embeds.push(e);
+    }
 
     const rows = [];
     let row = new ActionRowBuilder();
-    cats.slice(0, 20).forEach((c, i) => {
+    shown.forEach((c, i) => {
         if (i > 0 && i % 5 === 0) { rows.push(row); row = new ActionRowBuilder(); }
         row.addComponents(
             new ButtonBuilder()
@@ -89,7 +99,7 @@ async function showCategories(interaction) {
     });
     if (row.components.length) rows.push(row);
 
-    return replyOrUpdate(interaction, { content: '', embeds: [embed], components: rows.slice(0, 5) });
+    return replyOrUpdate(interaction, { content: '', embeds, components: rows.slice(0, 5) });
 }
 
 // ═══════════════════════════════════════════════════

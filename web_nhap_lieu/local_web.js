@@ -12,6 +12,7 @@ const path = require('path');
 const Product = require('./src/models/Product');
 const ProductStock = require('./src/models/ProductStock');
 const Order = require('./src/models/Order');
+const Category = require('./src/models/Category');
 
 const app = express();
 const port = 3000;
@@ -284,6 +285,74 @@ app.delete('/api/groups/:category/:id', async (req, res) => {
         res.json({ success: true, message: 'Đã xóa mặt hàng và kho liên quan' });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ═══════════════════════════════════════════════════
+// DANH MỤC SẢN PHẨM (Category) - bot dùng ảnh này để hiển thị
+// Ảnh CHỈ lưu link. Có thể dán link sẵn, hoặc up file để lấy link từ Discord.
+// ═══════════════════════════════════════════════════
+app.get('/api/categories', async (req, res) => {
+    try {
+        const cats = await Category.find().sort({ sortOrder: 1 }).lean();
+        const counts = await Product.aggregate([
+            { $match: { isActive: true } },
+            { $group: { _id: '$webCategory', n: { $sum: 1 } } }
+        ]);
+        const map = new Map(counts.map(c => [c._id, c.n]));
+        res.json(cats.map(c => ({
+            key: c.key, name: c.name, description: c.description || '',
+            imageUrl: c.imageUrl || '', sortOrder: c.sortOrder, isActive: c.isActive,
+            productCount: map.get(c.key) || 0
+        })));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/categories/:key', async (req, res) => {
+    try {
+        const { name, description, imageUrl, sortOrder, isActive } = req.body;
+        const update = {};
+        if (name !== undefined) update.name = name;
+        if (description !== undefined) update.description = description;
+        if (imageUrl !== undefined) update.imageUrl = imageUrl;   // chỉ là link
+        if (sortOrder !== undefined) update.sortOrder = Number(sortOrder);
+        if (isActive !== undefined) update.isActive = !!isActive;
+
+        const cat = await Category.findOneAndUpdate(
+            { key: req.params.key }, { $set: update }, { new: true }
+        );
+        if (!cat) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
+        res.json({ success: true, message: 'Đã lưu danh mục', data: cat });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Up 1 ảnh -> đẩy lên Discord -> lấy link -> gán vào danh mục
+app.post('/api/categories/:key/image', upload.single('image'), async (req, res) => {
+    const f = req.file;
+    try {
+        if (!f) return res.status(400).json({ error: 'Chưa chọn ảnh' });
+        if (!process.env.DISCORD_WEBHOOK_URL) {
+            return res.status(500).json({ error: 'Chưa cấu hình DISCORD_WEBHOOK_URL' });
+        }
+
+        const form = new FormData();
+        form.append('file', fs.createReadStream(f.path), f.originalname);
+        const r = await axios.post(process.env.DISCORD_WEBHOOK_URL + '?wait=true', form, {
+            headers: form.getHeaders()
+        });
+        const url = r.data?.attachments?.[0]?.url;
+        if (!url) throw new Error('Discord không trả về link ảnh');
+
+        const cat = await Category.findOneAndUpdate(
+            { key: req.params.key }, { $set: { imageUrl: url } }, { new: true }
+        );
+        if (!cat) return res.status(404).json({ error: 'Không tìm thấy danh mục' });
+
+        res.json({ success: true, message: 'Đã cập nhật ảnh danh mục', imageUrl: url });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    } finally {
+        if (f && fs.existsSync(f.path)) fs.unlinkSync(f.path);
     }
 });
 

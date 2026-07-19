@@ -310,6 +310,7 @@
         <button class="tab-btn" onclick="openTab('tab-dashboard', this)">📊 Thống Kê</button>
         <button class="tab-btn" onclick="openTab('tab-groups', this)">📂 Quản Lý Mặt Hàng</button>
         <button class="tab-btn" onclick="openTab('tab-inventory', this)">📋 Quản Lý Tồn Kho</button>
+        <button class="tab-btn" onclick="openTab('tab-categories', this); loadCategories()">🖼️ Ảnh Danh Mục</button>
     </div>
 </div>
 
@@ -437,6 +438,17 @@ Nếu bán Code: Mã_Code
     </div>
 
     <!-- TAB: QUẢN LÝ TỒN KHO -->
+    <div id="tab-categories" class="tab-pane">
+        <h2>🖼️ Ảnh Danh Mục Sản Phẩm</h2>
+        <p style="color:#8b949e; margin-bottom:18px; text-align:center;">
+            Ảnh này hiện trong menu <b>/shop</b> của bot khi khách chọn danh mục.
+            Dán sẵn link ảnh, hoặc chọn file để hệ thống đẩy lên Discord rồi tự lấy link
+            (chỉ link được lưu, không lưu file).
+        </p>
+        <div id="cat-list">Đang tải...</div>
+        <div id="catMsg" style="margin-top:12px;"></div>
+    </div>
+
     <div id="tab-inventory" class="tab-pane">
         <h2>📋 Quản Lý Tồn Kho (Chi Tiết)</h2>
         <div style="margin-bottom: 20px;">
@@ -838,6 +850,75 @@ Nếu bán Code: Mã_Code
             loadStats();
         }
     }, 30000);
+
+// ─── ẢNH DANH MỤC ──────────────────────────────────────────────
+async function loadCategories() {
+    const box = document.getElementById('cat-list');
+    box.innerHTML = 'Đang tải...';
+    try {
+        const cats = await (await fetch('/api/categories')).json();
+        if (!cats.length) { box.innerHTML = '<i>Chưa có danh mục nào.</i>'; return; }
+        box.innerHTML = cats.map(c => `
+            <div style="border:1px solid var(--glass-border); background:rgba(255,255,255,0.03); border-radius:12px; padding:16px; margin-bottom:14px; display:flex; gap:16px; align-items:flex-start;">
+                <img src="${c.imageUrl || ''}" alt="chưa có ảnh"
+                     style="width:84px; height:84px; object-fit:cover; border-radius:8px; background:rgba(0,0,0,0.3); border:1px solid var(--glass-border); flex-shrink:0;"
+                     onerror="this.style.opacity=0.25">
+                <div style="flex:1;">
+                    <b>${c.name}</b>
+                    <span style="color:#8b949e;">(${c.key}) — ${c.productCount} mặt hàng</span>
+                    <div style="margin-top:8px;">
+                        <input type="text" id="url-${c.key}" value="${c.imageUrl || ''}"
+                               placeholder="Dán link ảnh vào đây..."
+                               style="width:100%; box-sizing:border-box; margin-bottom:0;">
+                    </div>
+                    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <button class="tab-btn" onclick="saveCatUrl('${c.key}')">💾 Lưu link</button>
+                        <input type="file" id="file-${c.key}" accept="image/*" style="width:auto; margin-bottom:0; padding:8px;">
+                        <button class="tab-btn" onclick="uploadCatImage('${c.key}')">⬆️ Up ảnh & lấy link</button>
+                    </div>
+                </div>
+            </div>`).join('');
+    } catch (e) {
+        box.innerHTML = '<span style="color:red;">Lỗi tải danh mục: ' + e.message + '</span>';
+    }
+}
+
+function catMsg(text, ok) {
+    const el = document.getElementById('catMsg');
+    el.style.color = ok ? 'green' : 'red';
+    el.textContent = text;
+}
+
+async function saveCatUrl(key) {
+    try {
+        const imageUrl = document.getElementById('url-' + key).value.trim();
+        const r = await fetch('/api/categories/' + key, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageUrl })
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Lỗi');
+        catMsg('✅ ' + d.message, true);
+        loadCategories();
+    } catch (e) { catMsg('❌ ' + e.message, false); }
+}
+
+async function uploadCatImage(key) {
+    const f = document.getElementById('file-' + key).files[0];
+    if (!f) { catMsg('❌ Chưa chọn file ảnh', false); return; }
+    catMsg('⏳ Đang đẩy ảnh lên Discord...', true);
+    try {
+        const fd = new FormData();
+        fd.append('image', f);
+        const r = await fetch('/api/categories/' + key + '/image', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || 'Lỗi');
+        catMsg('✅ ' + d.message, true);
+        loadCategories();
+    } catch (e) { catMsg('❌ ' + e.message, false); }
+}
+
 </script>
 
 </body>

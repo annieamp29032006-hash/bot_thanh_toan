@@ -4,10 +4,7 @@ uploads/
 *.log
 .DS_Store
 database/mongo_data/
-
 database/*.json
-
 # File dump SQL (chứa dữ liệu nhạy cảm - không commit)
 *.sql
 MONGODB_KETNOI.txt
-web_nhap_lieu/
