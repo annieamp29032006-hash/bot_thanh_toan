@@ -9,3 +9,4 @@ database/*.json
 
 # File dump SQL (chứa dữ liệu nhạy cảm - không commit)
 *.sql
+MONGODB_KETNOI.txt
