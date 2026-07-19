@@ -1,15 +1,15 @@
 /**
  * index.js - Entry point cho Kaiz Store Bot
  *
- * Kiến trúc: Discord.js v14 + MariaDB (đọc sản phẩm trực tiếp từ web shop).
- * Chống bán trùng: khóa list_items atomic (status 2).
+ * Kiến trúc: Discord.js v14 + MongoDB (Category -> Product -> ProductStock).
+ * Chống bán trùng: khóa ProductStock atomic trong transaction (cần replica set).
  * Thanh toán: QR ngân hàng + Webhook Web2M (khớp số tiền lẻ độc nhất).
  */
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const config = require('./config');
-const db = require('./src/utils/mariadb');
+const db = require('./src/utils/database');
 const logService = require('./src/services/logService');
-const paymentService = require('./src/services/mariaPaymentService');
+const paymentService = require('./src/services/paymentService');
 const orderExpiry = require('./src/utils/orderExpiry');
 const webhookServer = require('./src/utils/webhookServer');
 const interactionHandler = require('./src/events/interactionCreate');

@@ -231,6 +231,9 @@ async function confirmPayment(paymentId, web2mData = {}) {
 
         payment.status = 'confirmed';
         payment.confirmedAt = new Date();
+        // Lưu mã giao dịch ngân hàng: vừa để đối soát, vừa để webhook gửi lại
+        // cùng một giao dịch thì nhận ra mà bỏ qua.
+        if (web2mData.bankTransactionId) payment.bankTransactionId = String(web2mData.bankTransactionId);
         payment.web2mData = web2mData;
         await payment.save();
         
@@ -250,6 +253,9 @@ async function confirmPayment(paymentId, web2mData = {}) {
 
     payment.status = 'confirmed';
     payment.confirmedAt = new Date();
+    // Lưu mã giao dịch ngân hàng: vừa để đối soát, vừa để webhook gửi lại
+    // cùng một giao dịch thì nhận ra mà bỏ qua.
+    if (web2mData.bankTransactionId) payment.bankTransactionId = String(web2mData.bankTransactionId);
     payment.web2mData = web2mData;
     await payment.save();
 

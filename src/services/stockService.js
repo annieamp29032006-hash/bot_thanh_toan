@@ -7,6 +7,14 @@ const ProductStock = require('../models/ProductStock');
 const logService = require('./logService');
 
 /**
+ * Ném ra khi kho không đủ hàng. Phải là lỗi riêng để phân biệt với lỗi tạm thời
+ * của MongoDB (WriteConflict) - loại kia được withTransaction thử lại, loại này thì không.
+ */
+class OutOfStockError extends Error {
+    constructor() { super('OUT_OF_STOCK'); this.name = 'OutOfStockError'; }
+}
+
+/**
  * Thêm 1 code/account vào kho
  */
 async function addOne(productId, content, password = '', imageUrl = '') {
@@ -51,59 +59,47 @@ async function getAll(productId, statusFilter = null) {
  * ═══════════════════════════════════════════════════
  */
 async function lockStock(productId, quantity, orderId) {
-    const locked = [];
-
     const session = await mongoose.startSession();
-    session.startTransaction();
+    let locked = [];
+    let shortage = null; // số lượng thực sự khoá được khi kho không đủ
 
     try {
-        for (let i = 0; i < quantity; i++) {
-            const stock = await ProductStock.findOneAndUpdate(
-                { productId, status: 'available' },
-                { 
-                    $set: { 
-                        status: 'locked', 
-                        lockedForOrder: orderId
-                    } 
-                },
-                { new: true, session }
-            );
+        // withTransaction TỰ THỬ LẠI khi gặp TransientTransactionError (WriteConflict).
+        // Hai khách bấm mua cùng lúc chắc chắn đụng nhau ở đây; không retry thì một
+        // người nhận lỗi vô cớ và hàng nằm ế dù vẫn còn.
+        await session.withTransaction(async () => {
+            locked = []; // reset vì callback có thể chạy lại
 
-            if (!stock) {
-                // Không đủ hàng available
-                await session.abortTransaction();
-                session.endSession();
+            for (let i = 0; i < quantity; i++) {
+                const stock = await ProductStock.findOneAndUpdate(
+                    { productId, status: 'available' },
+                    { $set: { status: 'locked', lockedForOrder: orderId } },
+                    { returnDocument: 'after', session }
+                );
 
-                // Rollback các stock đã lock
-                if (locked.length > 0) {
-                    await ProductStock.updateMany(
-                        { _id: { $in: locked.map(s => s._id) } },
-                        { $set: { status: 'available', lockedForOrder: null } }
-                    );
+                if (!stock) {
+                    // Kho không đủ -> abort. KHÔNG tự tay mở khoá: abortTransaction đã
+                    // hoàn tác mọi thay đổi trong session này. Mở khoá thủ công ở ngoài
+                    // session có thể nhả nhầm acc mà đơn khác vừa khoá hợp lệ -> bán trùng.
+                    shortage = i;
+                    throw new OutOfStockError();
                 }
-
-                return { success: false, locked: [], message: `Có người đang giao dịch mặt hàng này hoặc kho không đủ (chỉ còn trống ${locked.length}/${quantity} chiếc). Vui lòng chờ 5 phút!` };
+                locked.push(stock);
             }
+        });
 
-            locked.push(stock);
-        }
-
-        await session.commitTransaction();
-        session.endSession();
         return { success: true, locked };
     } catch (err) {
-        await session.abortTransaction();
-        session.endSession();
-
-        // Rollback
-        if (locked.length > 0) {
-            await ProductStock.updateMany(
-                { _id: { $in: locked.map(s => s._id) } },
-                { $set: { status: 'available', lockedForOrder: null } }
-            );
+        if (err instanceof OutOfStockError) {
+            return {
+                success: false,
+                locked: [],
+                message: `Có người đang giao dịch mặt hàng này hoặc kho không đủ (chỉ còn trống ${shortage}/${quantity} chiếc). Vui lòng thử lại sau ít phút!`
+            };
         }
-
         throw err;
+    } finally {
+        await session.endSession();
     }
 }
 

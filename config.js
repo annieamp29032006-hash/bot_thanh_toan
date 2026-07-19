@@ -10,22 +10,8 @@ const config = {
     CLIENT_ID: process.env.CLIENT_ID,
     GUILD_ID: process.env.GUILD_ID || '',
 
-    // MongoDB (deprecated - đang chuyển sang MariaDB)
-    MONGO_URI: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/lavie_shop',
-
-    // MariaDB (nguồn sản phẩm + lưu đơn hàng bot)
-    DB_HOST: process.env.DB_HOST || '127.0.0.1',
-    DB_PORT: parseInt(process.env.DB_PORT) || 3306,
-    DB_USER: process.env.DB_USER || 'root',
-    DB_PASS: process.env.DB_PASS || '',
-    DB_NAME: process.env.DB_NAME || 'jndzunzi_shopaccv3kaiz',
-
-    // Domain gốc để ghép URL ảnh sản phẩm (list_image/group.image là path tương đối)
-    IMAGE_BASE_URL: process.env.IMAGE_BASE_URL || 'https://kzshop.shop',
-
-    // Lọc giá rác trong list_items (bỏ giá test 1đ / 999999999đ)
-    MIN_VALID_PRICE: parseInt(process.env.MIN_VALID_PRICE) || 1000,
-    MAX_VALID_PRICE: parseInt(process.env.MAX_VALID_PRICE) || 100000000,
+    // MongoDB - nguồn dữ liệu duy nhất (Category -> Product -> ProductStock -> Order/Payment)
+    MONGO_URI: process.env.MONGO_URI || '',
 
     // Web2M Payment
     WEB2M_API_KEY: process.env.WEB2M_API_KEY || '',
@@ -68,7 +54,7 @@ config.reload = function() {
     config.DISCORD_TOKEN = process.env.DISCORD_TOKEN;
     config.CLIENT_ID = process.env.CLIENT_ID;
     config.GUILD_ID = process.env.GUILD_ID || '';
-    config.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/lavie_shop';
+    config.MONGO_URI = process.env.MONGO_URI || '';
     config.WEB2M_API_KEY = process.env.WEB2M_API_KEY || '';
     config.WEB2M_API_NAME = process.env.WEB2M_API_NAME || 'historyapimbv3';
     config.WEB2M_ACCOUNT_PASSWORD = process.env.WEB2M_ACCOUNT_PASSWORD || '';

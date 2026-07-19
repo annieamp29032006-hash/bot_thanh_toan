@@ -2,14 +2,14 @@
  * orderExpiry.js - Tự hủy đơn quá hạn thanh toán và nhả hàng về kho.
  *
  * Xác nhận thanh toán do Webhook lo (xem webhookServer.js) - Web2M tự đẩy giao dịch sang.
- * Module này KHÔNG gọi API Web2M, chỉ quét bot_orders theo chu kỳ: đơn nào còn 'pending'
- * mà quá expires_at thì chuyển 'expired' và mở khóa list_items về lại kho.
+ * Module này KHÔNG gọi API Web2M, chỉ quét Payment theo chu kỳ: đơn nào còn 'waiting'
+ * mà quá expiresAt thì cho hết hạn, hủy Order và mở khóa ProductStock về lại kho.
  *
- * Bắt buộc phải chạy: tạo đơn có khóa hàng (status 2), không có bước nhả này thì
- * mọi đơn khách bỏ dở sẽ giữ hàng vĩnh viễn.
+ * Bắt buộc phải chạy: tạo đơn có khóa hàng (ProductStock.status = 'locked'), không có
+ * bước nhả này thì mọi đơn khách bỏ dở sẽ giữ hàng vĩnh viễn.
  */
 const config = require('../../config');
-const orderService = require('../services/mariaOrderService');
+const orderService = require('../services/orderService');
 
 let timer = null;
 
@@ -19,10 +19,10 @@ function ts() {
 
 async function tick() {
     try {
-        const expired = await orderService.expireOrders();
+        const expired = await orderService.expirePendingOrders();
         if (expired > 0) console.log(`   [${ts()}] Đã hủy ${expired} đơn hết hạn & nhả hàng về kho.`);
     } catch (err) {
-        console.error(`   [${ts()}] Lỗi expireOrders:`, err.message);
+        console.error(`   [${ts()}] Lỗi expirePendingOrders:`, err.message);
     }
 }
 

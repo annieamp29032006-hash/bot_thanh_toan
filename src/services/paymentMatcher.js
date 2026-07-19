@@ -1,30 +1,24 @@
 /**
- * paymentMatcher.js - Khớp giao dịch ngân hàng với đơn đang chờ rồi giao hàng.
- * Dùng chung cho cả Poller (hỏi định kỳ) và Webhook (Web2M tự đẩy sang).
+ * paymentMatcher.js - Khớp giao dịch ngân hàng với đơn đang chờ rồi giao hàng (nền MongoDB).
  *
- * Khớp bằng SỐ TIỀN (số tiền lẻ độc nhất của đơn). Chỉ xét tiền VÀO (IN).
- * Chống trùng bằng mã giao dịch (isBankTxProcessed) + confirmPayment atomic.
+ * Khớp bằng SỐ TIỀN LẺ ĐỘC NHẤT: mỗi đơn được gán một số tiền riêng (giá + 1..999)
+ * nên khách không cần ghi nội dung chuyển khoản.
+ *
+ * Chống trùng: mã giao dịch ngân hàng được ghi vào Payment.bankTransactionId, gặp lại
+ * cùng mã thì bỏ qua. Webhook Web2M có thể gửi lại cùng một sự kiện nhiều lần.
  */
+const Payment = require('../models/Payment');
+const paymentService = require('./paymentService');
 const tx = require('../utils/txParse');
-const orderService = require('./mariaOrderService');
-const paymentService = require('./mariaPaymentService');
 
-/**
- * @param {Array} transactions  danh sách giao dịch (đã extract)
- * @param {string} label        nhãn nguồn để log ("Poller" | "Webhook")
- * @returns {{matched:number, checked:number}}
- */
-async function processTransactions(transactions, label = '') {
+async function processTransactions(transactions, label = 'Webhook') {
     if (!Array.isArray(transactions) || transactions.length === 0) {
         return { matched: 0, checked: 0 };
     }
 
-    const pending = await orderService.getPendingOrders();
-    if (pending.length === 0) return { matched: 0, checked: transactions.length };
-
     let matched = 0;
     for (const t of transactions) {
-        // Chỉ xét TIỀN VÀO (nếu API không ghi rõ loại thì vẫn xét để không sót)
+        // Chỉ xét TIỀN VÀO (API không ghi rõ loại thì vẫn xét để không sót)
         const type = tx.typeOf(t);
         if (type && type !== 'IN') continue;
 
@@ -32,21 +26,23 @@ async function processTransactions(transactions, label = '') {
         if (!amount) continue;
 
         const txId = String(tx.idOf(t) || `amt_${amount}`);
-        if (await orderService.isBankTxProcessed(txId)) continue;
 
-        // Tìm đơn pending có số tiền khớp tuyệt đối
-        const order = pending.find(o => Number(o.amount) === amount && o.status === 'pending');
-        if (!order) continue;
+        // Đã xử lý giao dịch này rồi -> bỏ qua (webhook gửi lại)
+        const done = await Payment.findOne({ bankTransactionId: txId }).lean();
+        if (done) continue;
 
-        const result = await orderService.confirmPayment(order.id, txId);
-        if (result && result.success) {
-            const dmSent = await paymentService.deliver(result.order, result.items);
-            const notified = await paymentService.notifyBuyer(result.order, dmSent);
-            console.log(`   🎯 [${label}] KHỚP đơn ${order.reference} = ${amount}đ (GD ${txId}) → giao hàng | DM khách: ${dmSent ? 'THÀNH CÔNG' : 'THẤT BẠI (khách tắt DM?)'} | Sửa tin QR: ${notified ? 'OK' : 'không (token hết hạn?)'}`);
-            matched++;
-            order.status = 'done'; // tránh khớp lại trong cùng lượt
-        }
+        // Tìm đơn đang chờ có số tiền khớp tuyệt đối
+        const payment = await Payment.findOne({ amount, status: 'waiting' });
+        if (!payment) continue;
+
+        await paymentService.handlePaymentConfirmed(payment._id, {
+            bankTransactionId: txId,
+            raw: t
+        });
+        matched++;
+        console.log(`   🎯 [${label}] KHỚP ${amount}đ (GD ${txId}) → đã xử lý giao hàng.`);
     }
+
     return { matched, checked: transactions.length };
 }
 
