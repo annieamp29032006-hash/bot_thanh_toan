@@ -7,14 +7,12 @@
  *   1. Danh mục cấp 1   (open_shop_menu / mroot)  -> mc1_<key>
  *   2. Danh mục cấp 2   (mc1_<key>)               -> mc2_<key>      | back: mroot
  *   3. Sản phẩm         (mc2_<key>)               -> mprod_<id>     | back: mc1_<parent>
- *   4. Chi tiết          (mprod_<id>)              -> mqtyask_<id>   | back: mc2_<key>
- *   5. Ô nhập số lượng   (modal mqtymodal_<id>)    -> tạo đơn + QR
- *   6. QR thanh toán                               -> mcancel_<ref>
+ *   4. Chi tiết          (mprod_<id>)              -> tùy loại hàng | back: mc2_<key>
+ *        - bán số lượng (code)     -> mqtyask_<id> mở ô nhập số lượng
+ *        - bán đích danh (account/vip) -> mbuy_<id>_1 mua thẳng 1 cái
+ *   5. QR thanh toán                               -> mcancel_<ref>
  *
  * Phân trang cũng bằng nút: mc2p_/mprodp_<key>_<trang>.
- *
- * mbuy_<id>_<sl> là nhánh của các nút mốc số lượng đã bỏ. Giữ lại vì tin nhắn ẩn
- * cũ trong máy khách vẫn còn nút đó - bỏ nhánh thì bấm vào sẽ "interaction failed".
  *
  * Giới hạn Discord: tối đa 5 hàng x 5 nút = 25 component mỗi tin nhắn. Chừa 1 hàng
  * cho điều hướng nên mỗi trang hiển thị tối đa 20 mục.
@@ -234,14 +232,22 @@ async function showDetail(interaction, productId) {
         });
     }
 
-    let desc = `💰 **Giá:** \`${p.price.toLocaleString('vi-VN')}đ\` / sản phẩm\n` +
+    // Bán đích danh: mỗi cái là một tài khoản riêng, mua nhiều cùng lúc không có
+    // nghĩa -> bỏ ô nhập số lượng, cho mua thẳng đúng 1.
+    // VIP cũng chỉ 1 mỗi đơn (orderService ép lại, đây chỉ là hiển thị).
+    const isSingle = p.type === 'account' || p.type === 'vip';
+
+    let desc = `💰 **Giá:** \`${p.price.toLocaleString('vi-VN')}đ\`` +
+               (isSingle ? '\n' : ' / sản phẩm\n') +
                `📦 **Còn lại:** \`${p.avail}\` sản phẩm\n`;
     if (p.description) {
         const lines = p.description.split('\n').map(l => l.trim()).filter(Boolean).slice(0, 12);
         if (lines.length) desc += `\n**Thông tin sản phẩm:**\n` + lines.map(l => `> 🔹 ${l}`).join('\n');
     }
     desc += `\n\n*Thông tin đăng nhập/code sẽ được gửi ngay vào tin nhắn riêng sau khi thanh toán.*` +
-            `\n\n**Chọn số lượng cần mua 👇**`;
+            (isSingle
+                ? `\n\n**Bấm mua để đặt hàng 👇**`
+                : `\n\n**Chọn số lượng cần mua 👇**`);
 
     const embed = new EmbedBuilder()
         .setTitle(`🛒 ${p.name}`)
@@ -249,17 +255,17 @@ async function showDetail(interaction, productId) {
         .setColor(GOLD);
     if (p.imageUrl) embed.setImage(p.imageUrl);
 
-    // VIP chỉ bán 1 mỗi đơn (orderService cũng ép lại, đây chỉ là hiển thị)
-    const maxQty = p.type === 'vip' ? 1 : p.avail;
-
-    // Một nút duy nhất mở ô nhập số lượng. Bỏ các nút mốc 1/2/3/5/10 vì chúng vừa
-    // chiếm chỗ vừa không bao giờ phủ hết mọi con số khách cần.
     const rows = [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`mqtyask_${p.id}`)
-                .setLabel(`🛒 Nhập số lượng cần mua (tối đa ${maxQty})`)
-                .setStyle(ButtonStyle.Success)
+            isSingle
+                ? new ButtonBuilder()
+                    .setCustomId(`mbuy_${p.id}_1`)
+                    .setLabel(`🛒 Mua ngay — ${p.price.toLocaleString('vi-VN')}đ`)
+                    .setStyle(ButtonStyle.Success)
+                : new ButtonBuilder()
+                    .setCustomId(`mqtyask_${p.id}`)
+                    .setLabel(`🛒 Nhập số lượng cần mua (tối đa ${p.avail})`)
+                    .setStyle(ButtonStyle.Success)
         )
     ];
 

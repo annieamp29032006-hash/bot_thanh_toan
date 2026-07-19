@@ -118,13 +118,23 @@ async function getProduct(productId) {
     }
     if (!p || !p.isActive) return null;
     const avail = await ProductStock.countDocuments({ productId: p._id, status: 'available' });
+
+    // Hàng bán đích danh (account) mang ảnh riêng trên từng cái trong kho. Sản phẩm
+    // chưa đặt ảnh thì lấy ảnh của cái sắp giao để khách vẫn thấy đúng món mình mua.
+    let imageUrl = p.imageUrl || '';
+    if (!imageUrl && avail > 0) {
+        const first = await ProductStock.findOne({ productId: p._id, status: 'available' })
+            .select('imageUrl').lean();
+        imageUrl = first?.imageUrl || '';
+    }
+
     return {
         id: String(p._id),
         name: p.name,
         type: p.type,
         price: p.price,
         description: p.description || '',
-        imageUrl: p.imageUrl || '',
+        imageUrl,
         webCategory: p.webCategory,
         avail
     };
