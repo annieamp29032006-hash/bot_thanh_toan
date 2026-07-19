@@ -130,6 +130,13 @@ async function showRoots(interaction) {
 // ═══════════════════════════════════════════════════
 async function showChildren(interaction, parentKey, page = 1) {
     const parent = await catalog.getCategory(parentKey);
+
+    // Danh mục chưa chia nhỏ -> vào thẳng sản phẩm, khỏi bắt khách bấm qua một
+    // tầng trung gian rỗng nghĩa.
+    if (!(await catalog.hasChildren(parentKey))) {
+        return showProducts(interaction, parentKey, page);
+    }
+
     const all = await catalog.getChildCategories(parentKey);
 
     if (!all.length) {

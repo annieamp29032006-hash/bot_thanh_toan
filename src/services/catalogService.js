@@ -37,8 +37,11 @@ async function availByChildKey() {
 }
 
 /**
- * Danh mục CẤP 1 còn hàng (màn đầu tiên).
- * Danh mục rỗng bị ẩn - cho khách bấm vào chỉ để thấy "hết hàng" thì vô nghĩa.
+ * TẤT CẢ danh mục CẤP 1 đang bật (màn đầu tiên) - kể cả đang hết hàng.
+ * Khách cần thấy gian hàng có những mục gì; mục hết hàng bấm vào sẽ báo hết hàng.
+ *
+ * Sản phẩm có thể nằm ở cấp 2, HOẶC nằm thẳng ở cấp 1 khi danh mục đó chưa chia
+ * nhỏ - nên tồn kho cộng cả hai nguồn.
  */
 async function getRootCategories() {
     const [roots, children] = await Promise.all([
@@ -47,19 +50,25 @@ async function getRootCategories() {
     ]);
     if (!roots.length) return [];
 
-    const perChild = await availByChildKey();
+    const perKey = await availByChildKey();
 
-    // Cộng tồn kho của các danh mục con lên danh mục cha
+    // Tồn kho của cấp 1 = hàng gắn thẳng vào nó + hàng của các cấp 2 bên trong
     const perRoot = new Map();
+    for (const r of roots) perRoot.set(r.key, perKey.get(r.key) || 0);
     for (const c of children) {
-        const n = perChild.get(c.key) || 0;
+        const n = perKey.get(c.key) || 0;
         if (!n) continue;
         perRoot.set(c.parentKey, (perRoot.get(c.parentKey) || 0) + n);
     }
 
-    return roots
-        .map(r => ({ key: r.key, name: r.name, imageUrl: r.imageUrl || '', avail: perRoot.get(r.key) || 0 }))
-        .filter(r => r.avail > 0);
+    return roots.map(r => ({
+        key: r.key, name: r.name, imageUrl: r.imageUrl || '', avail: perRoot.get(r.key) || 0
+    }));
+}
+
+/** Danh mục cấp 1 này có danh mục con nào đang bật không */
+async function hasChildren(parentKey) {
+    return (await Category.countDocuments({ isActive: true, parentKey })) > 0;
 }
 
 /** Danh mục CẤP 2 còn hàng trong một danh mục cha (màn thứ hai) */
@@ -138,6 +147,7 @@ async function countAvailable(productId) {
 module.exports = {
     getRootCategories,
     getChildCategories,
+    hasChildren,
     getCategory,
     getProducts,
     getProduct,

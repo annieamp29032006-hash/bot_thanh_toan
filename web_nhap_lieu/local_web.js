@@ -375,16 +375,10 @@ app.post('/api/groups', async (req, res) => {
         if (!name || !type) return res.status(400).json({ error: 'Thiếu thông tin' });
         if (!category) return res.status(400).json({ error: 'Chưa chọn danh mục' });
 
-        // Mặt hàng BẮT BUỘC nằm ở danh mục cấp 2. Gắn vào cấp 1 thì màn hình mua hàng
-        // của bot sẽ không bao giờ hiện ra nó (cấp 1 chỉ dẫn xuống cấp 2).
+        // Mặt hàng gắn được vào cả cấp 1 lẫn cấp 2. Bot tự xử: cấp 1 nào chưa có
+        // danh mục con thì bấm vào ra thẳng sản phẩm.
         const cat = await Category.findOne({ key: category });
         if (!cat) return res.status(400).json({ error: `Không tìm thấy danh mục "${category}"` });
-        if (!cat.parentKey) {
-            return res.status(400).json({
-                error: `"${cat.name}" là danh mục cấp 1. Mặt hàng phải thuộc danh mục cấp 2 ` +
-                       `- hãy tạo danh mục con bên trong nó rồi chọn danh mục con đó.`
-            });
-        }
 
         const newProduct = await Product.create({
             name: name,

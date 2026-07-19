@@ -83,10 +83,27 @@ async function cleanup() {
     check('màn4 -> màn3 (back) khớp', `mc2_${detail.webCategory}`.slice(4) === C1);
     check('màn3 -> màn2 (back) khớp', `mc1_${catOfProd.parentKey}`.slice(4) === R);
 
-    console.log('\nDANH MỤC RỖNG BỊ ẨN');
+    console.log('\nCẤP 1 CHƯA CHIA NHỎ -> VÀO THẲNG SẢN PHẨM');
+    await Category.create({ key: 'zzflat', name: 'ZZ Phẳng', parentKey: null, sortOrder: 98 });
+    const pf = await Product.create({ name: 'ZZ SP Phẳng', type: 'code', webCategory: 'zzflat', price: 7000 });
+    await ProductStock.create({ productId: pf._id, content: 'f1', status: 'available' });
+    check('cấp 1 này không có danh mục con', (await catalog.hasChildren('zzflat')) === false);
+    const flatProds = await catalog.getProducts('zzflat');
+    check('lấy được sản phẩm gắn thẳng ở cấp 1', flatProds.length === 1, `${flatProds.length} sp`);
+    const rootsFlat = await catalog.getRootCategories();
+    const rf = rootsFlat.find(r => r.key === 'zzflat');
+    check('tồn kho cấp 1 tính cả hàng gắn thẳng', rf && rf.avail === 1, rf ? `avail=${rf.avail}` : '');
+    await ProductStock.deleteMany({ productId: pf._id });
+    await Product.deleteOne({ _id: pf._id });
+    await Category.deleteOne({ key: 'zzflat' });
+
+    console.log('\nDANH MỤC HẾT HÀNG VẪN HIỆN');
+    // Chủ shop muốn khách luôn thấy gian hàng có những mục gì, kể cả mục đang hết.
     await ProductStock.updateMany({ productId: { $in: [p1._id, p2._id] } }, { $set: { status: 'sold' } });
     const rootsAfter = await catalog.getRootCategories();
-    check('bán hết thì cấp 1 tự ẩn', !rootsAfter.find(r => r.key === R));
+    const rAfter = rootsAfter.find(r => r.key === R);
+    check('bán hết vẫn hiện ở màn 1', !!rAfter);
+    check('nhưng tồn kho về 0', rAfter && rAfter.avail === 0, rAfter ? `avail=${rAfter.avail}` : '');
 
     console.log('\n' + '='.repeat(52));
     console.log(ok ? 'KẾT QUẢ: ĐẠT — luồng 2 cấp và nút quay lại khớp nhau.' : 'KẾT QUẢ: HỎNG');

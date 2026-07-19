@@ -92,17 +92,12 @@ async function execute(interaction) {
         const channel = interaction.options.getChannel('channel');
         const webCategory = interaction.options.getString('danh_muc');
 
-        // Sản phẩm PHẢI nằm ở danh mục cấp 2. Gắn vào cấp 1 (hoặc để mặc định như
-        // trước đây) thì menu bot không bao giờ hiện nó ra - lỗi im lặng, rất khó truy.
+        // Gắn được vào cả cấp 1 lẫn cấp 2. Vẫn phải kiểm tra danh mục có thật, vì
+        // trước đây lệnh này không set webCategory nên sản phẩm nhận mặc định 'gcoin'
+        // rồi mồ côi trong im lặng.
         const cat = await Category.findOne({ key: webCategory }).lean();
         if (!cat) {
             return interaction.editReply(`❌ Không tìm thấy danh mục \`${webCategory}\`. Hãy chọn từ danh sách gợi ý.`);
-        }
-        if (!cat.parentKey) {
-            return interaction.editReply(
-                `❌ **${cat.name}** là danh mục cấp 1. Sản phẩm phải thuộc danh mục **cấp 2**.\n` +
-                `Hãy tạo danh mục con bên trong nó ở trang nhập liệu rồi chọn danh mục con đó.`
-            );
         }
 
         let imageUrl = '';
@@ -265,21 +260,20 @@ function fetchFile(url) {
 }
 
 /**
- * Gợi ý danh mục khi gõ /product add. CHỈ liệt kê danh mục cấp 2 vì sản phẩm
- * gắn vào cấp 1 sẽ không bao giờ hiện ra trong menu mua hàng.
+ * Gợi ý danh mục khi gõ /product add. Liệt kê CẢ HAI cấp - sản phẩm gắn vào cấp 1
+ * vẫn bán được (bot vào thẳng sản phẩm nếu cấp 1 đó chưa chia nhỏ).
  */
 async function autocomplete(interaction) {
     const focused = (interaction.options.getFocused() || '').toLowerCase();
 
-    const children = await Category.find({ parentKey: { $ne: null } })
-        .sort({ sortOrder: 1, name: 1 }).limit(100).lean();
+    const all = await Category.find().sort({ sortOrder: 1, name: 1 }).limit(200).lean();
+    const parentName = new Map(all.filter(c => !c.parentKey).map(p => [p.key, p.name]));
 
-    const parents = await Category.find({ parentKey: null }).lean();
-    const parentName = new Map(parents.map(p => [p.key, p.name]));
-
-    const choices = children
+    const choices = all
         .map(c => ({
-            name: `${parentName.get(c.parentKey) || c.parentKey} › ${c.name}`.slice(0, 100),
+            name: (c.parentKey
+                ? `${parentName.get(c.parentKey) || c.parentKey} › ${c.name}`
+                : c.name).slice(0, 100),
             value: c.key
         }))
         .filter(c => !focused || c.name.toLowerCase().includes(focused) || c.value.includes(focused))
