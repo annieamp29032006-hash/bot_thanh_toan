@@ -10,6 +10,11 @@ const config = {
     CLIENT_ID: process.env.CLIENT_ID,
     GUILD_ID: process.env.GUILD_ID || '',
 
+    // Bot phụ chuyên trách kênh xét duyệt hàng đặc biệt. Bắt buộc phải là client
+    // riêng: Discord gửi sự kiện bấm nút về đúng application đã đăng tin nhắn đó.
+    // Bỏ trống thì bot chính tự lo luôn phần xét duyệt.
+    APPROVAL_BOT_TOKEN: process.env.APPROVAL_BOT_TOKEN || '',
+
     // MongoDB - nguồn dữ liệu duy nhất (Category -> Product -> ProductStock -> Order/Payment)
     MONGO_URI: process.env.MONGO_URI || '',
 
@@ -40,6 +45,7 @@ const config = {
         LOG_CODE: process.env.CH_LOG_CODE || '',
         LOG_VIP: process.env.CH_LOG_VIP || '',
         LOG_ACCOUNT: process.env.CH_LOG_ACCOUNT || '',
+        APPROVAL: process.env.CH_APPROVAL || '',   // kênh xét duyệt hàng đặc biệt
         STATS_24H: process.env.CH_STATS_24H || '',
         MSG_STATS_24H: process.env.MSG_STATS_24H || '',
         STATS_30D: process.env.CH_STATS_30D || '',
@@ -71,6 +77,7 @@ config.reload = function() {
     config.CHANNELS.LOG_CODE = process.env.CH_LOG_CODE || '';
     config.CHANNELS.LOG_VIP = process.env.CH_LOG_VIP || '';
     config.CHANNELS.LOG_ACCOUNT = process.env.CH_LOG_ACCOUNT || '';
+    config.CHANNELS.APPROVAL = process.env.CH_APPROVAL || '';
     config.CHANNELS.STATS_24H = process.env.CH_STATS_24H || '';
     config.CHANNELS.MSG_STATS_24H = process.env.MSG_STATS_24H || '';
     config.CHANNELS.STATS_30D = process.env.CH_STATS_30D || '';

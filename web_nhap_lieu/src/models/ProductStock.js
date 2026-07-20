@@ -10,8 +10,12 @@ const productStockSchema = new mongoose.Schema({
         required: true, 
         index: true 
     },
+    // Nạp kho theo dạng: username|password|email|mô tả riêng|chính sách bảo hành;
     content: { type: String, required: true },    // Code: "ABC-123" | Account: username
     password: { type: String, default: '' },       // Chỉ dùng cho account
+    email: { type: String, default: '' },          // Email gắn kèm, giao cho khách
+    note: { type: String, default: '' },           // Mô tả riêng - chỉ hiện lúc khách duyệt hàng
+    warranty: { type: String, default: '' },       // Chính sách bảo hành, giao cho khách
     imageUrl: { type: String, default: '' },       // Ảnh riêng (account)
     status: {
         type: String,

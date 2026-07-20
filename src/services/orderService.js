@@ -244,8 +244,12 @@ async function confirmPayment(paymentId, web2mData = {}) {
     // Code + Account: Đã khóa hàng ở bước createOrder, giờ chỉ cần đổi sang sold
     const claimedItems = await stockService.confirmSold(order._id, order.userId);
 
-    // Giao hàng thành công
-    order.status = 'delivered';
+    // Cờ đặc biệt nằm ở MẶT HÀNG: mặt hàng đã đặc biệt thì mọi stock của nó đều
+    // phải qua xét duyệt. Tiền vẫn thu, hàng vẫn giữ chỗ, nhưng KHÔNG tự gửi.
+    const hasSpecial = Boolean(product.isSpecial);
+
+    order.status = hasSpecial ? 'paid' : 'delivered';
+    order.needsApproval = hasSpecial;
     order.paidAt = new Date();
     order.stockIds = claimedItems.map(s => s._id);
     order.dmSent = false; // Sẽ cập nhật sau khi gửi DM
@@ -288,7 +292,32 @@ async function confirmPayment(paymentId, web2mData = {}) {
         }
     }
 
-    return { success: true, order, product, items: claimedItems, type: product.type };
+    return {
+        success: true,
+        order,
+        product,
+        items: claimedItems,
+        type: hasSpecial ? 'special' : product.type
+    };
+}
+
+/**
+ * Admin duyệt và giao hàng đặc biệt (nội dung do admin tự nhập)
+ */
+async function deliverApproved(reference, content, adminId) {
+    const order = await Order.findOne({ reference });
+    if (!order) return { success: false, message: 'Không tìm thấy đơn hàng.' };
+    if (!order.needsApproval) return { success: false, message: 'Đơn này không thuộc diện chờ duyệt.' };
+    if (order.status === 'delivered') return { success: false, message: 'Đơn này đã được duyệt và giao rồi.' };
+    if (order.status !== 'paid') return { success: false, message: `Đơn hàng ở trạng thái "${order.status}", không thể giao.` };
+
+    order.deliveryContent = content;
+    order.deliveredBy = adminId;
+    order.deliveredAt = new Date();
+    order.status = 'delivered';
+    await order.save();
+
+    return { success: true, order };
 }
 
 /**
@@ -395,6 +424,7 @@ module.exports = {
     createSpecificOrder,
     confirmPayment,
     deliverVip,
+    deliverApproved,
     findByReference,
     cancelOrder,
     refundOrder,

@@ -12,6 +12,8 @@ const logService = require('./src/services/logService');
 const paymentService = require('./src/services/paymentService');
 const orderExpiry = require('./src/utils/orderExpiry');
 const webhookServer = require('./src/utils/webhookServer');
+const approvalBot = require('./src/utils/approvalBot');
+const modalHandler = require('./src/handlers/modalHandler');
 const interactionHandler = require('./src/events/interactionCreate');
 const readyHandler = require('./src/events/ready');
 const messageHandler = require('./src/events/messageCreate');
@@ -49,6 +51,9 @@ async function start() {
     // Inject client vào service cần gửi Discord
     logService.setClient(client);
     paymentService.setClient(client);
+    // Hàng duyệt xong vẫn phải do bot chính DM cho khách, kể cả khi nút duyệt
+    // được bấm ở bot phụ.
+    modalHandler.setDmClient(client);
 
     client.once('ready', async () => {
         await readyHandler.handle(client);
@@ -86,6 +91,14 @@ async function start() {
     }
 
     await client.login(config.DISCORD_TOKEN);
+
+    // Bot phụ chỉ phục vụ kênh xét duyệt. Chết cũng không được kéo bot chính chết
+    // theo: cửa hàng vẫn phải bán được, cùng lắm thì thông báo duyệt về bot chính.
+    try {
+        await approvalBot.start();
+    } catch (err) {
+        console.error('❌ Bot xét duyệt không đăng nhập được:', err.message);
+    }
 }
 
 start().catch(err => {

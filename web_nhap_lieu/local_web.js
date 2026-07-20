@@ -136,7 +136,7 @@ mongoose.connect(process.env.MONGO_URI)
 // UPLOAD TÀI KHOẢN/CODE
 app.post('/api/upload', upload.array('images', 100), async (req, res) => {
     try {
-        const { group_id, batch_data, price, description } = req.body;
+        const { group_id, batch_data, price, description, warranty } = req.body;
         const files = req.files;
         
         if (!group_id || !batch_data || !files || files.length === 0) {
@@ -150,8 +150,7 @@ app.post('/api/upload', upload.array('images', 100), async (req, res) => {
             if (files) files.forEach(f => { if(fs.existsSync(f.path)) fs.unlinkSync(f.path); });
             return res.status(404).json({ success: false, message: 'Không tìm thấy sản phẩm trong hệ thống Bot!' });
         }
-        const itemType = product.type;
-        
+
         // 1. Upload ảnh lên Discord Webhook
         let webhookUrl = process.env.DISCORD_WEBHOOK_URL;
         if (!webhookUrl) {
@@ -187,38 +186,38 @@ app.post('/api/upload', upload.array('images', 100), async (req, res) => {
         const updateData = {};
         if (price) updateData.price = Number(price) || 0;
         if (description) updateData.description = description;
+        if (warranty) updateData.warranty = warranty;
         if (imageUrls.length > 0) updateData.imageUrl = imageUrls[0];
         if (Object.keys(updateData).length > 0) {
             await Product.findByIdAndUpdate(group_id, updateData);
         }
 
         // 2. Lưu vào MongoDB ProductStock
-        let lines = [];
-        if (batch_data.includes('!')) {
-            lines = batch_data.split('!').map(l => l.trim()).filter(l => l.length > 0);
-        } else {
-            lines = batch_data.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        }
+        // Định dạng chuẩn: mỗi stock kết thúc bằng ';'
+        //   username|password|email|mô tả riêng|chính sách bảo hành;
+        // Dấu ';' cho phép bản thân từng trường được xuống dòng thoải mái. Không có
+        // ';' nào thì coi mỗi dòng là một stock, để danh sách code thuần vẫn nạp được.
+        // (Bỏ hẳn kiểu cắt theo '!' cũ: chỉ cần mật khẩu chứa '!' là vỡ cả lô hàng.)
+        let lines = batch_data.includes(';')
+            ? batch_data.split(';')
+            : batch_data.split('\n');
+        lines = lines.map(l => l.trim()).filter(l => l.length > 0);
         
         let uploadedCount = 0;
         const docs = [];
         
         for (let i = 0; i < lines.length; i++) {
+            // Tách theo ĐÚNG NHỮNG GÌ NGƯỜI DÙNG GÕ, không theo kiểu bán của danh mục.
+            // Kiểu bán chỉ quyết định cách khách mua (theo số lượng hay đích danh);
+            // gõ vào bao nhiêu trường thì phải giữ đủ bấy nhiêu, nếu không mật khẩu
+            // với mail sẽ bị nuốt mất ngay từ lúc nạp kho.
             const parts = lines[i].split('|').map(p => p.trim());
-            let currentUsr = 'CODE';
-            let currentPass = '';
-            
-            if (itemType === 'account') {
-                if (parts.length >= 2) {
-                    currentUsr = parts[0];
-                    currentPass = parts[1];
-                } else {
-                    currentUsr = parts[0];
-                }
-            } else {
-                currentUsr = parts[0]; // code content
-            }
-            
+            const currentUsr = parts[0];
+            const currentPass = parts[1] || '';
+            const currentEmail = parts[2] || '';
+            const currentNote = parts[3] || '';
+            const currentWarranty = parts[4] || '';
+
             if (!currentUsr) continue;
             
             const lineImage = imageUrls[i] || imageUrls[imageUrls.length - 1]; // Trải đều ảnh nếu thiếu
@@ -227,6 +226,9 @@ app.post('/api/upload', upload.array('images', 100), async (req, res) => {
                 productId: product._id,
                 content: currentUsr,
                 password: currentPass,
+                email: currentEmail,
+                note: currentNote,
+                warranty: currentWarranty,
                 imageUrl: lineImage,
                 status: 'available'
             });
@@ -314,7 +316,9 @@ app.get('/api/inventory', async (req, res) => {
             buyer_code: '',
             created_at: s.createdAt,
             price: s.productId ? s.productId.price : 0,
-            extra_data: ''
+            email: s.email || '',
+            note: s.note || '',
+            warranty: s.warranty || ''
         }));
         
         res.json({ success: true, data: mapped });
@@ -326,8 +330,14 @@ app.get('/api/inventory', async (req, res) => {
 app.put('/api/inventory/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { username, password } = req.body;
-        await ProductStock.findByIdAndUpdate(id, { content: username, password: password });
+        const { username, password, email, note, warranty } = req.body;
+
+        const update = { content: username, password: password };
+        if (email !== undefined) update.email = String(email).trim();
+        if (note !== undefined) update.note = String(note).trim();
+        if (warranty !== undefined) update.warranty = String(warranty).trim();
+
+        await ProductStock.findByIdAndUpdate(id, update);
         res.json({ success: true, message: 'Đã cập nhật sản phẩm' });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -360,7 +370,7 @@ app.get('/api/groups', async (req, res) => {
         for (const p of products) {
             const k = p.webCategory || 'khac';
             if (!data[k]) data[k] = []; // sản phẩm trỏ vào danh mục đã bị xoá -> vẫn hiện để còn dọn
-            data[k].push({ id: p._id.toString(), name: p.name, type: p.type });
+            data[k].push({ id: p._id.toString(), name: p.name, type: p.type, isSpecial: !!p.isSpecial });
         }
 
         res.json(data);
@@ -406,6 +416,34 @@ app.delete('/api/groups/:category/:id', async (req, res) => {
         await Product.findByIdAndDelete(id);
         await ProductStock.deleteMany({ productId: id });
         res.json({ success: true, message: 'Đã xóa mặt hàng và kho liên quan' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Sửa mặt hàng: đổi tên và/hoặc bật tắt cờ hàng đặc biệt.
+// (Frontend vẫn gọi PUT này từ lâu nhưng route chưa từng tồn tại -> bấm Sửa là 404.)
+app.put('/api/groups/:category/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, isSpecial } = req.body;
+
+        const update = {};
+        if (name !== undefined) {
+            const clean = String(name).trim();
+            if (!clean) return res.status(400).json({ error: 'Tên mặt hàng không được để trống' });
+            update.name = clean;
+        }
+        if (isSpecial !== undefined) update.isSpecial = Boolean(isSpecial);
+
+        if (!Object.keys(update).length) {
+            return res.status(400).json({ error: 'Không có gì để cập nhật' });
+        }
+
+        const product = await Product.findByIdAndUpdate(id, update, { new: true });
+        if (!product) return res.status(404).json({ error: 'Không tìm thấy mặt hàng' });
+
+        res.json({ success: true, message: 'Đã cập nhật mặt hàng', data: { id: product._id.toString(), name: product.name, isSpecial: !!product.isSpecial } });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

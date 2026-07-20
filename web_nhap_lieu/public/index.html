@@ -331,15 +331,26 @@
                 <span style="font-weight:normal; font-size:13px; margin-left:10px; color:#00ff88; cursor:pointer; text-decoration:underline;" onclick="document.getElementById('txtFile').click()">[📁 Tải lên từ file .txt]</span>
             </label>
             <input type="file" id="txtFile" accept=".txt" style="display:none;" onchange="loadTxtFile(event)">
-            <textarea id="batch_data" name="batch_data" rows="8" placeholder="Cách nhập:
-Nếu bán Acc: Tên_Đăng_Nhập | Mật_Khẩu | Email | Mô_tả_riêng
-(Ví dụ: user1 | pass123 | mail@... | Acc VIP có M4A1)
+            <textarea id="batch_data" name="batch_data" rows="8" placeholder="Cách nhập — MỖI SẢN PHẨM KẾT THÚC BẰNG DẤU CHẤM PHẨY (;)
 
-Nếu bán Code: Mã_Code
-(Ví dụ: CODE_ABC_123)" required></textarea>
+Bán Acc: username|password|email|mô tả riêng|chính sách bảo hành;
+Ví dụ:
+user1|pass123|mail1@gmail.com|Acc VIP có M4A1|Bảo hành 1 tháng;
+user2|pass456|mail2@gmail.com|Acc thường|Bảo hành 7 ngày;
+
+Hàng đặc biệt (chờ admin duyệt) cấu hình ở tab Quản Lý Mặt Hàng,
+áp dụng cho toàn bộ kho của mặt hàng đó.
+
+Bán Code: mỗi mã 1 dòng (không cần dấu ;)
+CODE_ABC_123" required></textarea>
             
-            <label for="description">Mô Tả Chung (Dùng cho tất cả, nếu bỏ trống Mô_tả_riêng):</label>
-            <input type="text" id="description" name="description" placeholder="Ví dụ: Súng AUG mạ vàng, rank Cao Thủ...">
+            <label for="description">Mô Tả Chung (Dùng cho tất cả, nếu bỏ trống Mô_tả_riêng) — Enter để xuống dòng:</label>
+            <textarea id="description" name="description" rows="4" placeholder="Ví dụ: Súng AUG mạ vàng, rank Cao Thủ...
+Bấm Enter để xuống dòng — bot sẽ hiển thị đúng như bạn gõ."></textarea>
+
+            <label for="warranty">Chính Sách Bảo Hành Chung Của Mặt Hàng — Enter để xuống dòng:</label>
+            <textarea id="warranty" name="warranty" rows="3" placeholder="Ví dụ: Bảo hành 1 đổi 1 trong 7 ngày.
+Chỉ dùng khi sản phẩm KHÔNG có chính sách bảo hành riêng (trường thứ 5 lúc nạp kho)."></textarea>
 
             <label for="price">Giá Tiền (VNĐ):</label>
             <input type="number" id="price" name="price" placeholder="Ví dụ: 100000" required>
@@ -425,11 +436,12 @@ Nếu bán Code: Mã_Code
                     <th>Tên Mặt Hàng</th>
                     <th>Danh Mục Mẹ</th>
                     <th>Kiểu Bán</th>
+                    <th>Hàng Đặc Biệt</th>
                     <th>Hành Động</th>
                 </tr>
             </thead>
             <tbody id="groups-body">
-                <tr><td colspan="5" style="text-align: center;">Đang tải dữ liệu...</td></tr>
+                <tr><td colspan="6" style="text-align: center;">Đang tải dữ liệu...</td></tr>
             </tbody>
         </table>
     </div>
@@ -583,6 +595,8 @@ Nếu bán Code: Mã_Code
         } catch (e) { /* giữ nguyên map cũ nếu lỗi */ }
     }
 
+    let currentGroupsById = {};
+
     async function loadGroups() {
         try {
             await refreshCatNames();
@@ -612,6 +626,10 @@ Nếu bán Code: Mã_Code
             tbody.innerHTML = '';
             let hasData = false;
             
+            // Giữ lại để editGroup/toggleSpecial tra cứu, khỏi nhét dữ liệu vào onclick
+            currentGroupsById = {};
+            for (let cat in data) data[cat].forEach(g => { currentGroupsById[g.id] = g; });
+
             for (let cat in data) {
                 data[cat].forEach(g => {
                     hasData = true;
@@ -621,15 +639,19 @@ Nếu bán Code: Mã_Code
                         <td style="font-weight: bold;">${g.name}</td>
                         <td>${catNames[cat] || cat}</td>
                         <td>${g.type === 'account' ? 'Bán đích danh' : 'Bán số lượng'}</td>
+                        <td>${g.isSpecial
+                            ? '<span style="color:#FFD700;font-weight:bold;">⭐ Đặc biệt</span>'
+                            : '<span style="color:#888;">Thường</span>'}</td>
                         <td>
-                            <button class="btn-edit" onclick="editGroup('${cat}', '${g.id}', '${g.name}')">Sửa</button>
+                            <button class="btn-edit" onclick="editGroup('${cat}', '${g.id}')">Sửa</button>
+                            <button class="btn-edit" onclick="toggleSpecial('${g.id}', ${g.isSpecial ? 'false' : 'true'})">${g.isSpecial ? 'Bỏ đặc biệt' : 'Đặt đặc biệt'}</button>
                             <button class="btn-delete" onclick="deleteGroup('${cat}', '${g.id}')">Xóa</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 });
             }
-            if(!hasData) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Chưa có mặt hàng nào.</td></tr>';
+            if(!hasData) tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Chưa có mặt hàng nào.</td></tr>';
             
         } catch(e) {
             console.error("Lỗi tải groups", e);
@@ -664,10 +686,13 @@ Nếu bán Code: Mã_Code
     });
 
     // Sửa danh mục mặt hàng
-    async function editGroup(category, id, oldName) {
-        const newName = prompt(`Nhập tên mới cho mặt hàng:\n(Đang là: ${oldName})`, oldName);
-        if(!newName || newName === oldName) return;
-        
+    async function editGroup(category, id) {
+        const g = currentGroupsById[id];
+        if(!g) return alert('Không tìm thấy mặt hàng, hãy tải lại trang.');
+
+        const newName = prompt(`Nhập tên mới cho mặt hàng:\n(Đang là: ${g.name})`, g.name);
+        if(!newName || newName === g.name) return;
+
         try {
             const res = await fetch(`/api/groups/${category}/${id}`, {
                 method: 'PUT',
@@ -677,6 +702,29 @@ Nếu bán Code: Mã_Code
             const result = await res.json();
             if(result.success) loadGroups();
             else alert('Lỗi sửa mặt hàng: ' + result.error);
+        } catch(e) {
+            alert('Lỗi kết nối.');
+        }
+    }
+
+    // Bật/tắt cờ hàng đặc biệt. Bật là TOÀN BỘ kho của mặt hàng này phải chờ duyệt.
+    async function toggleSpecial(id, makeSpecial) {
+        const g = currentGroupsById[id];
+        const ten = g ? g.name : id;
+        const msg = makeSpecial
+            ? `Đặt "${ten}" thành HÀNG ĐẶC BIỆT?\n\nToàn bộ kho của mặt hàng này sẽ KHÔNG giao tự động nữa — khách trả tiền xong phải chờ admin duyệt ở kênh #duyệt.`
+            : `Bỏ đặc biệt cho "${ten}"?\n\nKho của mặt hàng này sẽ quay lại giao tự động ngay sau khi khách thanh toán.`;
+        if(!confirm(msg)) return;
+
+        try {
+            const res = await fetch(`/api/groups/x/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isSpecial: makeSpecial })
+            });
+            const result = await res.json();
+            if(result.success) loadGroups();
+            else alert('Lỗi: ' + result.error);
         } catch(e) {
             alert('Lỗi kết nối.');
         }
@@ -842,7 +890,9 @@ Nếu bán Code: Mã_Code
             const updatedAt = isSold ? formatDate(item.updated_at) : '-';
             
             let noidung = `TK: ${item.username || '-'}<br>MK: ${item.password || '-'}`;
-            if(item.extra_data) noidung += `<br>Mail: ${item.extra_data}`;
+            if(item.email) noidung += `<br>Mail: ${item.email}`;
+            if(item.note) noidung += `<br><span style="color:#aaa;">Mô tả: ${item.note}</span>`;
+            if(item.warranty) noidung += `<br><span style="color:#00D8FF;">BH: ${item.warranty}</span>`;
             
             tr.innerHTML = `
                 <td>${index + 1} (ID:${item.id})</td>
@@ -853,7 +903,7 @@ Nếu bán Code: Mã_Code
                 <td style="font-size: 12px; color: #aaa;">${updatedAt}</td>
                 <td>${statusText}</td>
                 <td>
-                    <button class="btn-edit" onclick="editInventory('${item.id}', '${item.username || ''}', '${item.password || ''}', '${item.extra_data || ''}')">Sửa</button>
+                    <button class="btn-edit" onclick="editInventory('${item.id}')">Sửa</button>
                     <button class="btn-delete" onclick="deleteInventory('${item.id}')">Xóa</button>
                 </td>
             `;
@@ -874,18 +924,28 @@ Nếu bán Code: Mã_Code
         renderInventory(filtered);
     }
 
-    async function editInventory(id, oldUser, oldPass, oldEmail) {
-        const username = prompt("Sửa Tài Khoản (bỏ trống nếu không có):", oldUser);
+    async function editInventory(id) {
+        // Tra lại từ mảng đã tải thay vì nhét cả object vào onclick - dữ liệu có
+        // dấu nháy hay dấu < là vỡ HTML ngay.
+        const item = (currentInventoryData || []).find(x => String(x.id) === String(id));
+        if (!item) return alert("Không tìm thấy sản phẩm, hãy tải lại danh sách.");
+
+        const username = prompt("Sửa Tài Khoản (bỏ trống nếu không có):", item.username || '');
         if(username === null) return;
-        const password = prompt("Sửa Mật Khẩu / Code (bắt buộc):", oldPass);
+        const password = prompt("Sửa Mật Khẩu / Code (bắt buộc):", item.password || '');
         if(!password) return alert("Mật khẩu không được để trống!");
-        const extra_data = prompt("Sửa Email Gắn Kèm:", oldEmail);
-        
+        const email = prompt("Sửa Email gắn kèm:", item.email || '');
+        if(email === null) return;
+        const note = prompt("Sửa Mô tả riêng (chỉ hiện lúc khách duyệt hàng):", item.note || '');
+        if(note === null) return;
+        const warranty = prompt("Sửa Chính sách bảo hành:", item.warranty || '');
+        if(warranty === null) return;
+
         try {
             const res = await fetch(`/api/inventory/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password, extra_data })
+                body: JSON.stringify({ username, password, email, note, warranty })
             });
             const result = await res.json();
             if(result.success) loadInventory();

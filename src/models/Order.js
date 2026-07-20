@@ -26,10 +26,12 @@ const orderSchema = new mongoose.Schema({
     interactionToken: { type: String, default: '' },
     paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
     
-    // Chỉ dành cho VIP (Admin giao thủ công)
+    // Dành cho VIP và hàng đặc biệt (Admin giao thủ công)
     deliveryContent: { type: String, default: '' },
     deliveredBy: { type: String, default: '' },
     deliveredAt: { type: Date, default: null },
+    // Đơn dính hàng đặc biệt: đã thu tiền nhưng phải chờ admin duyệt mới giao.
+    needsApproval: { type: Boolean, default: false, index: true },
     
     dmSent: { type: Boolean, default: false },
     paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },

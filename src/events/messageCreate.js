@@ -6,7 +6,7 @@ const productService = require('../services/productService');
 const stockService = require('../services/stockService');
 const embeds = require('../utils/embedBuilder');
 const imageUploader = require('../utils/imageUploader');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 async function handle(message) {
     if (message.author.bot) return;
@@ -15,10 +15,7 @@ async function handle(message) {
         // Chỉ admin mới được chạy lệnh này
         if (!message.member.permissions.has('Administrator')) return;
 
-        const embed = new EmbedBuilder()
-            .setAuthor({ name: '🛒 HỆ THỐNG CỬA HÀNG TỰ ĐỘNG', iconURL: 'https://cdn-icons-png.flaticon.com/512/3081/3081986.png' })
-            .setTitle('🌟 DANH MỤC SẢN PHẨM 🌟')
-            .setDescription('Chào mừng bạn đến với hệ thống Cửa Hàng!\n\n💎 **CAM KẾT DỊCH VỤ:**\n> • ⚡ Hoạt động tự động 24/7\n> • 🚀 Giao dịch siêu tốc\n> • 🛡️ Kín đáo & Bảo mật tuyệt đối\n\n👇 *Vui lòng nhấn nút bên dưới để bắt đầu mua sắm!*')
+        const embed = embeds.shopWelcomeEmbed();
         const btn = new ButtonBuilder()
             .setCustomId('open_shop_menu')
             .setLabel('🛒 Xem Danh Mục Sản Phẩm')

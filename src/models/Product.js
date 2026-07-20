@@ -13,6 +13,12 @@ const productSchema = new mongoose.Schema({
     },
     webCategory: { type: String, default: 'gcoin' }, // 'acc_pc', 'gcoin', 'steam', 'outfit'
     description: { type: String, default: '' },
+    // Chính sách bảo hành chung của cả mặt hàng. Stock nào có bảo hành riêng thì
+    // dùng của nó, không có mới rơi về cái này.
+    warranty: { type: String, default: '' },
+    // Mặt hàng đặc biệt: TOÀN BỘ stock của nó đi theo luồng xét duyệt - khách vẫn
+    // quét QR trả tiền, nhưng phải chờ admin duyệt mới nhận được hàng.
+    isSpecial: { type: Boolean, default: false },
     price: { type: Number, required: true, min: 0 },
     imageUrl: { type: String, default: '' },
     displayChannelId: { type: String, default: '' }, // Kênh mặc định để post sản phẩm này

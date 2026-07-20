@@ -170,6 +170,29 @@ async function handle(interaction) {
         modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
         return interaction.showModal(modal);
     }
+
+    // ═══════════════════════════════════════
+    // NÚT DUYỆT HÀNG ĐẶC BIỆT (Admin)
+    // ═══════════════════════════════════════
+    if (id.startsWith('admin_approve_')) {
+        const orderRef = id.replace('admin_approve_', '');
+
+        const modal = new ModalBuilder()
+            .setCustomId(`modal_approve_${orderRef}`)
+            .setTitle(`Duyệt đơn: ${orderRef}`);
+
+        // setRequired(true): Discord tự chặn bấm Gửi khi ô còn trống.
+        const codeInput = new TextInputBuilder()
+            .setCustomId('approval_content')
+            .setLabel('Nội dung gửi cho khách:')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Ví dụ: Tài khoản: admin01 | Pass: 123456\nHoặc Code: ABC-XYZ-123')
+            .setRequired(true)
+            .setMinLength(1);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
+        return interaction.showModal(modal);
+    }
 }
 
 /**

@@ -5,6 +5,8 @@ const orderService = require('./orderService');
 const logService = require('./logService');
 const embeds = require('../utils/embedBuilder');
 const ProductStock = require('../models/ProductStock');
+const Product = require('../models/Product');
+const approvalBot = require('../utils/approvalBot');
 
 let _client = null;
 
@@ -53,10 +55,35 @@ async function handlePaymentConfirmed(paymentId, web2mData) {
     if (type === 'vip') {
         // VIP: Chờ admin giao → Báo khách + Báo admin
         await handleVipPaid(order);
+    } else if (type === 'special') {
+        // Hàng đặc biệt: đã thu tiền nhưng phải chờ admin duyệt mới giao
+        await handleSpecialPaid(order, result.items);
     } else {
         // Code / Account: Giao tự động
         await handleAutoDelivery(order, result.items);
     }
+}
+
+/**
+ * Gửi trọn bộ DM giao hàng: embed tóm tắt -> từng sản phẩm -> lời nhắc cuối.
+ * Discord cho tối đa 10 embed mỗi tin nhắn nên gom theo lô 10: vẫn đúng bố cục
+ * mỗi món một khối, mà mua số lượng lớn cũng không đụng rate limit.
+ */
+async function sendDeliveryDM(user, order, items) {
+    await user.send({ embeds: [embeds.deliveryEmbed(order, items)] });
+
+    // VIP giao bằng nội dung admin nhập, đã nằm trong embed tóm tắt rồi.
+    if (order.productType === 'vip' || !items.length) return;
+
+    // Bảo hành chung của mặt hàng, để đắp cho stock nào không khai riêng.
+    const product = await Product.findById(order.productId).select('warranty').lean();
+
+    const itemEmbeds = embeds.deliveryItemEmbeds(order, items, product ? product.warranty : '');
+    for (let i = 0; i < itemEmbeds.length; i += 10) {
+        await user.send({ embeds: itemEmbeds.slice(i, i + 10) });
+    }
+
+    await user.send(embeds.DELIVERY_DONE_NOTE);
 }
 
 /**
@@ -68,8 +95,7 @@ async function handleAutoDelivery(order, items) {
     try {
         const user = await _client.users.fetch(order.userId);
         if (user) {
-            const embed = embeds.deliveryEmbed(order, items);
-            await user.send({ embeds: [embed] });
+            await sendDeliveryDM(user, order, items);
             dmSent = true;
         }
     } catch (err) {
@@ -92,6 +118,39 @@ async function handleAutoDelivery(order, items) {
     }
 
     console.log(`[PaymentService] ✅ Giao hàng tự động: ${order.reference} (${items.length} items)`);
+}
+
+/**
+ * Hàng đặc biệt đã thanh toán → báo khách chờ, đẩy sang kênh xét duyệt.
+ * Không duyệt thì đơn cứ nằm ở trạng thái "paid", không tự hủy, không tự giao.
+ */
+async function handleSpecialPaid(order, items = []) {
+    // 1. DM khách: "đã nhận tiền, đang chờ duyệt"
+    let dmSent = false;
+    try {
+        const user = await _client.users.fetch(order.userId);
+        if (user) {
+            await user.send({ embeds: [embeds.specialWaitingEmbed(order)] });
+            dmSent = true;
+        }
+    } catch (err) { /* Khách tắt DM */ }
+
+    order.dmSent = dmSent;
+    await order.save();
+
+    // 2. Đẩy sang kênh xét duyệt kèm nút mở ô nhập nội dung giao.
+    // Ưu tiên bot phụ: nút phải do chính bot nào đăng thì bot đó mới nhận được
+    // sự kiện bấm. Bot phụ chưa cấu hình hoặc gửi hụt thì bot chính gánh, chứ
+    // không để đơn đã thu tiền nằm im mà không ai biết mà duyệt.
+    const alertEmbed = embeds.specialAdminAlertEmbed(order, order.userId, items);
+    const approveBtn = embeds.specialApproveButton(order.reference);
+
+    const sent = await approvalBot.sendApproval(alertEmbed, [approveBtn]);
+    if (!sent) {
+        await logService.sendToVipLog(alertEmbed, [approveBtn]);
+    }
+
+    console.log(`[PaymentService] ⭐ Hàng đặc biệt chờ duyệt: ${order.reference} (qua ${sent ? 'bot phụ' : 'bot chính'})`);
 }
 
 /**
@@ -132,15 +191,17 @@ async function resendDelivery(reference) {
         const user = await _client.users.fetch(order.userId);
         if (!user) return { success: false, message: 'Không tìm thấy người dùng.' };
 
-        let embed;
-        if (order.productType === 'vip') {
-            embed = embeds.deliveryEmbed(order, []);
+        if (order.needsApproval) {
+            // Hàng đặc biệt: khách nhận đúng nội dung admin đã duyệt, không phải
+            // dữ liệu kho - gửi lại cũng phải đúng cái đó.
+            await user.send({ embeds: [embeds.specialDeliveredEmbed(order)] });
         } else {
-            const items = await ProductStock.find({ _id: { $in: order.stockIds } });
-            embed = embeds.deliveryEmbed(order, items);
-        }
+            const items = order.productType === 'vip'
+                ? []
+                : await ProductStock.find({ _id: { $in: order.stockIds } });
 
-        await user.send({ embeds: [embed] });
+            await sendDeliveryDM(user, order, items);
+        }
         order.dmSent = true;
         await order.save();
 
